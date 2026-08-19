@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "holy-sheet"
+version = "0.1.0"
+description = "Zero-dependency xlsx writer + reader + formula linter for agentic document creation. The Python mirror of PHP particle-academy/holy-sheet and Node @particle-academy/holy-sheet."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Particle Academy" }]
+keywords = ["xlsx", "excel", "spreadsheet", "ooxml", "agent", "writer", "reader", "fancy", "human-plus"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+# NO runtime dependencies, deliberately and permanently.
+#
+# Both peers say the same thing in their own manifests ("zero-dependency,
+# isomorphic"), and Python is the runtime where it is easiest to break: an
+# all-in-one office library would happily own the document model, and the model
+# is the product. Zip and XML are generic infrastructure and both are in the
+# standard library (`zipfile`, `xml.etree.ElementTree`), so there is nothing
+# left to take a dependency ON.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/Particle-Academy/holy-sheet-py"
+Repository = "https://github.com/Particle-Academy/holy-sheet-py"
+Issues = "https://github.com/Particle-Academy/holy-sheet-py/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/holy_sheet"]
+
+[tool.pytest.ini_options]
+# `pythonpath` rather than an editable install: the suite must run on a bare
+# checkout with nothing but pytest, the same way `npm test` does for the Node
+# mirror.
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
