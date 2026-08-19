@@ -155,7 +155,7 @@ there.
 ## Install
 
 ```bash
-pip install holy-sheet
+pip install fancy-holy-sheet
 ```
 
 Requires Python 3.11+.
