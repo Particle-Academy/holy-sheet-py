@@ -30,7 +30,7 @@ from tests.conformance import loader
 
 # Asserted, not merely printed: "we are on an old fixture set" should be visible
 # in the log rather than inferred months later.
-PINNED_SUITE_VERSION = "0.4.0"
+PINNED_SUITE_VERSION = "0.5.0"
 
 DISPATCH = {
     "formatFloat": lambda v: format_float(float(v)),
