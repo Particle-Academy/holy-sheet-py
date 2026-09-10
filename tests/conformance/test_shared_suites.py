@@ -30,7 +30,14 @@ from tests.conformance import loader
 
 # Asserted, not merely printed: "we are on an old fixture set" should be visible
 # in the log rather than inferred months later.
-PINNED_SUITE_VERSION = "0.5.0"
+# Moved to 0.20.0 on 2026-09-10, deliberately and not to get to green: every
+# table above was re-run against the checkout FIRST and every row passes, with
+# the only skip being the documented cross-engine one. shared/decimal 18 rows.
+#
+# Five ports had drifted to a pin this stale at once, which says the failure is
+# structural rather than anyone forgetting: the pin only moves when a human
+# re-runs the tables, and nothing prompts that when the fixture package ships.
+PINNED_SUITE_VERSION = "0.20.0"
 
 DISPATCH = {
     "formatFloat": lambda v: format_float(float(v)),

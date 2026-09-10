@@ -12,6 +12,11 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`__version__` / `version()` read the INSTALLED distribution metadata instead of a literal.** The literal happened to agree with `pyproject.toml` today and had nothing keeping it that way — a second copy of a number that already exists. Reading the metadata deletes the copy rather than re-syncing it. `test_version_is_single_sourced.py` gains a check that fails if the literal is typed back in, which is the only part that runs without an install.
+
+
 ## [0.1.0] - 2026-08-18
 
 First release. The Python mirror of PHP `particle-academy/holy-sheet` 1.3.0 and
