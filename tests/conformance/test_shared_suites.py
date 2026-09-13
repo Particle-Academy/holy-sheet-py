@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from holy_sheet.helpers.php import format_float, numeric_string_to_number, php_round
-from tests.conformance import loader
+import fancy_conformance as loader
 
 # Asserted, not merely printed: "we are on an old fixture set" should be visible
 # in the log rather than inferred months later.
@@ -52,7 +52,15 @@ DISPATCH = {
 }
 
 
-def test_the_pinned_fixture_version_is_the_one_on_disk() -> None:
+def test_the_pinned_fixture_version_is_the_one_on_disk(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Past pytest's capture: a bare print() in a passing test never reaches the
+    # CI log, which is the one place rules 3 and 4 of fancy-conformance's
+    # runners/README.md need it.
+    with capsys.disabled():
+        print(f"\nfancy-conformance on disk: {loader.version()}, pinned: {PINNED_SUITE_VERSION}")
+
     assert loader.version() == PINNED_SUITE_VERSION, (
         f"fancy-conformance is at {loader.version()}, this port pins "
         f"{PINNED_SUITE_VERSION}. Re-run the suites and move the pin deliberately."
@@ -157,13 +165,17 @@ def test_this_port_implements_every_function_the_decimal_suite_declares() -> Non
     )
 
 
-def test_matches_the_shared_decimal_table() -> None:
+def test_matches_the_shared_decimal_table(capsys: pytest.CaptureFixture[str]) -> None:
     summary = loader.run_table(
         "shared/decimal", lambda c: DISPATCH[c["fn"]](c["input"]["value"])
     )
     # Printed unconditionally. A bare "3 skipped" in a log reads identically to
     # full coverage at a glance, so every skip is named with its reason.
-    print("\n" + loader.format_summary(summary))
+    # Past pytest's capture: a bare print() in a passing test never reaches the
+    # CI log, which is the one place rules 3 and 4 of fancy-conformance's
+    # runners/README.md need it.
+    with capsys.disabled():
+        print("\n" + loader.format_summary(summary))
 
     assert summary["passed"] >= 15, "the decimal table barely ran"
     assert summary["ok"], loader.format_summary(summary)

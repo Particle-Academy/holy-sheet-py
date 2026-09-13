@@ -47,6 +47,13 @@ packages = ["src/holy_sheet"]
 # `pythonpath` rather than an editable install: the suite must run on a bare
 # checkout with nothing but pytest, the same way `npm test` does for the Node
 # mirror.
-pythonpath = ["src"]
+#
+# The shared fixture loader is on the path the same way, from the
+# fancy-conformance checkout beside this repository in the .agi envelope (CI
+# sets PYTHONPATH to its own checkout instead). It replaces the private
+# tests/conformance/loader.py this repository carried: fancy-conformance's
+# AGENTS.md asks each consumer to delete its copy the next time it is touched,
+# because two of the four copies that existed read a case's `skip` as a scalar.
+pythonpath = ["src", "../fancy-conformance/python/src"]
 testpaths = ["tests"]
 addopts = "-ra"
