@@ -98,3 +98,32 @@ def test_the_got_field_never_reports_a_bool_as_an_int() -> None:
     """Python's `isinstance(True, int)` would make `got` say "int"."""
     errors = holy_sheet.validate({"sheets": True})
     assert errors[0]["got"] == "bool"
+
+
+# A sheet with no cells describes as `cells: []` in PHP (an empty PHP array), and
+# that JSON is what reaches this validator. PHP read it as a list and rejected it,
+# and so did this port, breaking describe() -> write() for an empty sheet.
+def test_accepts_an_empty_cells_array_which_is_how_php_describes_an_empty_sheet() -> None:
+    assert holy_sheet.validate({"sheets": [{"name": "Empty", "cells": []}]}) == []
+    assert holy_sheet.validate({"sheets": [{"name": "Empty", "cells": {}}]}) == []
+
+
+def test_still_flags_cells_given_as_a_non_empty_list() -> None:
+    errors = holy_sheet.validate({"sheets": [{"name": "Bad", "cells": [{"value": 1}]}]})
+    assert len(errors) == 1
+    assert errors[0]["path"] == "sheets[0].cells"
+
+
+def test_writes_back_a_described_workbook_that_has_an_empty_sheet() -> None:
+    data = holy_sheet.to_bytes(
+        {
+            "sheets": [
+                {"name": "Data", "columns": [{"header": "A"}], "rows": [[1]]},
+                {"name": "Empty", "cells": []},
+            ]
+        }
+    )
+    described = holy_sheet.read(data)
+    assert described["sheets"][1] == {"name": "Empty", "cells": {}}
+    assert holy_sheet.read(holy_sheet.to_bytes(described)) == described
+

@@ -146,10 +146,6 @@ def test_describes_the_same_workbook_the_same_way_whether_saved_as_xlsx_or_ods()
 
 def test_returns_a_schema_that_writes_straight_back_out() -> None:
     schema = _fixture("workbook.ods")
-    # Leave out the empty sheet, as the PHP test does (a pre-existing read/write
-    # contract defect there, not an ods one).
-    del schema["sheets"][4]
-
     assert holy_sheet.validate(schema) == []
     back = _without_auto(holy_sheet.read(holy_sheet.to_bytes(schema)))
     _same(back["sheets"][0]["cells"]["B3"], schema["sheets"][0]["cells"]["B3"])

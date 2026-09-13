@@ -37,7 +37,7 @@ from tests.conformance import loader
 # Five ports had drifted to a pin this stale at once, which says the failure is
 # structural rather than anyone forgetting: the pin only moves when a human
 # re-runs the tables, and nothing prompts that when the fixture package ships.
-PINNED_SUITE_VERSION = "0.20.0"
+PINNED_SUITE_VERSION = "0.22.0"
 
 DISPATCH = {
     "formatFloat": lambda v: format_float(float(v)),

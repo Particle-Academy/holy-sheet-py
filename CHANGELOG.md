@@ -28,6 +28,7 @@ what moved.
 
 - **`__version__` / `version()` read the INSTALLED distribution metadata instead of a literal.** The literal happened to agree with `pyproject.toml` today and had nothing keeping it that way — a second copy of a number that already exists. Reading the metadata deletes the copy rather than re-syncing it. `test_version_is_single_sourced.py` gains a check that fails if the literal is typed back in, which is the only part that runs without an install.
 
+- **An empty `cells: []` validates.** PHP's `describe()` reports a sheet with no cells as `cells: []`, and the validator rejected an empty list as "not a map", breaking describe-then-write for a workbook with an empty sheet. PHP (2.2.0) and Node (2.3.0) are fixed the same way. A non-empty list is still an error.
 
 ## [0.1.0] - 2026-08-18
 

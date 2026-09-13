@@ -178,7 +178,9 @@ class Validator:
 
         if _has(sheet, "cells"):
             cells = _get(sheet, "cells")
-            if not is_array(cells) or is_list(cells):
+            # `[]` is an empty map in PHP terms: PHP's describe() reports a sheet
+            # with no cells that way, so rejecting it broke describe() -> write().
+            if not is_array(cells) or (is_list(cells) and len(cells) > 0):
                 errors.append(
                     _error(
                         f"{path}.cells",
