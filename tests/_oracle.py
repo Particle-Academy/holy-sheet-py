@@ -116,6 +116,50 @@ def php_to_bytes(payload: object) -> bytes:
         return out_path.read_bytes()
 
 
+PHP_DESCRIBE_SCRIPT = REPO_ROOT / "scripts" / "php_describe.php"
+
+
+def php_describe(path: Path) -> object:
+    """Run the PHP READER over a file on disk and return its schema, parsed.
+
+    Object key order is kept (JSON objects load into insertion-ordered dicts),
+    and so is PHP's float/int distinction: the script encodes with
+    JSON_PRESERVE_ZERO_FRACTION.
+    """
+    binary = php_binary()
+    src = php_src_root()
+    if binary is None or src is None or not PHP_DESCRIBE_SCRIPT.is_file():
+        raise RuntimeError("the PHP oracle is not available; call oracle_available() first")
+
+    env = dict(os.environ)
+    env[_PHP_SRC_ENV] = str(src)
+    result = subprocess.run([binary, str(PHP_DESCRIBE_SCRIPT), str(path)], capture_output=True, env=env)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"the PHP reader exited {result.returncode}: "
+            f"{result.stderr.decode('utf-8', 'replace')[:2000]}"
+        )
+    return json.loads(result.stdout.decode("utf-8"))
+
+
+def ods_fixtures_dir() -> Path:
+    """The ODS fixtures, which live in the PHP repo so all three engines read the same bytes.
+
+    Found beside the PHP sources (HOLY_SHEET_PHP_SRC, then the sibling
+    checkout). Missing is an ERROR, never a skip: these tests need no PHP, only
+    the files, and a suite that goes green without its fixtures asserts nothing.
+    """
+    src = php_src_root()
+    fixtures = src.parent / "tests" / "fixtures" / "ods" if src is not None else None
+    if fixtures is None or not fixtures.is_dir():
+        raise RuntimeError(
+            "ODS fixtures not found. They live in the PHP holy-sheet repo at "
+            "tests/fixtures/ods; check it out beside this one or set "
+            f"{_PHP_SRC_ENV} to its src/ directory."
+        )
+    return fixtures
+
+
 def parts(data: bytes) -> dict[str, bytes]:
     """Unzip an OOXML container into `{part name: bytes}`."""
     with zipfile.ZipFile(io.BytesIO(data)) as archive:

@@ -12,6 +12,18 @@ what moved.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-13
+
+### Added
+
+- **`read()` and `describe()` read OpenDocument spreadsheets (`.ods`) into the same schema as `.xlsx`.** Ported from `particle-academy/holy-sheet`'s new reader, which has the full list of what maps (values, formulas translated to A1, repeats, merges, comments, styles, data styles, metadata) and what does not (frozen panes, column widths, fonts, function-name translation). The format is sniffed from the bytes, so the caller's branch on the file type can go. `OdsReader`, `FormatSniffer` and `UnsupportedFormatException` are exported.
+
+  PHP semantics are reproduced where Python's builtins differ: half-away-from-zero rounding through `php_round`, ASCII-only `trim` / `strtolower` / `\d`, and explicit `is None` checks, because an XML element with no children is falsy. `tests/test_ods_reader_parity_php.py` diffs this reader against PHP on the PHP repo's fixtures, key order and int/float included, through a new `scripts/php_describe.php`; `tests/test_ods_reader.py` ports the PHP assertions. Both load the fixtures from the PHP checkout, as the parity suite already located its sources.
+
+### Changed
+
+- **Unreadable bytes now raise `UnsupportedFormatException` instead of a bare `RuntimeError`.** It subclasses `RuntimeError`, so **an existing `except RuntimeError` keeps working: do nothing.** The message for bytes that are not a zip still says "zip archive", which `test_reader.py` pins; only code matching the rest of the old text (`cannot open the input`, `missing xl/workbook.xml`) sees different wording.
+
 ### Fixed
 
 - **`__version__` / `version()` read the INSTALLED distribution metadata instead of a literal.** The literal happened to agree with `pyproject.toml` today and had nothing keeping it that way — a second copy of a number that already exists. Reading the metadata deletes the copy rather than re-syncing it. `test_version_is_single_sourced.py` gains a check that fails if the literal is typed back in, which is the only part that runs without an install.

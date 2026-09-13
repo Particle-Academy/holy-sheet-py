@@ -40,9 +40,11 @@ from .agent import (
     version,
     write,
 )
-from .exceptions import SchemaException
+from .exceptions import SchemaException, UnsupportedFormatException
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
+from .reader.format_sniffer import FormatSniffer
+from .reader.ods_reader import OdsReader
 from .reader.xlsx_reader import XlsxReader
 from .schema.formula_linter import FormulaLinter
 from .schema.inference import Inference
@@ -75,13 +77,16 @@ __all__ = [
     "write",
     # Errors.
     "SchemaException",
+    "UnsupportedFormatException",
     # Lower-level building blocks, peer-named for cross-runtime familiarity.
     "ArrayBuilder",
     "CellAddress",
     "CsvBuilder",
+    "FormatSniffer",
     "FormulaLinter",
     "Inference",
     "Normalizer",
+    "OdsReader",
     "Repairer",
     "Theme",
     "Validator",

@@ -57,6 +57,9 @@ _SYMBOL_TO_ISO = {
     "₩": "KRW",
 }
 
+#: Public for the ODS reader, which reads the same symbols out of data styles.
+SYMBOL_TO_ISO = _SYMBOL_TO_ISO
+
 _QUOTED_PREFIX = re.compile(r'^"([^"]+)"')
 _LITERALS = re.compile(r'"[^"]*"|\[[^\]]*\]')
 _DATE_TOKEN = re.compile(r"[ymd]", re.IGNORECASE)

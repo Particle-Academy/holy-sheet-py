@@ -78,8 +78,8 @@ Module-level functions — no class to instantiate, no DI container:
 | `validate_and_repair(schema)` | `{schema, errors, repairs}` |
 | `to_bytes(schema)` | `bytes` |
 | `write(schema, path)` | `{path, bytes, sheets}` — synchronous |
-| `read(data)` | schema, from xlsx **bytes** |
-| `describe(path)` | schema, from a **path** |
+| `read(data)` | schema, from xlsx or ods **bytes** |
+| `describe(path)` | schema, from an xlsx or ods **path** |
 | `lint(schema)` | `[{sheet, address, formula, error, hint}]` |
 | `from_array(rows, headers=None, sheet_name="Sheet 1", options=None)` | schema, with inferred column types |
 | `from_csv(csv_or_path, options=None)` | schema, from CSV content **or** a path |
@@ -92,8 +92,24 @@ definition and every backend describes the same tool.
 
 Lower-level services are exported under their peer names for when you want to
 inject them: `Validator`, `Repairer`, `Normalizer`, `FormulaLinter`, `Inference`,
-`Theme`, `XlsxWriter`, `XlsxReader`, `ArrayBuilder`, `CsvBuilder`, `CellAddress`,
-`SchemaException`.
+`Theme`, `XlsxWriter`, `XlsxReader`, `OdsReader`, `FormatSniffer`, `ArrayBuilder`,
+`CsvBuilder`, `CellAddress`, `SchemaException`, `UnsupportedFormatException`.
+
+### Reading OpenDocument spreadsheets
+
+`read()` and `describe()` accept an OpenDocument spreadsheet (`.ods`) as well as
+an `.xlsx`, and return the same schema for both, so a caller needs no branch on
+the file type and no second library:
+
+```python
+schema = holy_sheet.describe("upload.ods")  # or upload.xlsx: same shape
+```
+
+The format is decided from the file's contents, never its name. Anything else
+raises `UnsupportedFormatException` (a `RuntimeError`, with the declared
+`mimetype` when there is one). What maps and what does not is listed in the PHP
+package's [`docs/ReadPath.md`](https://github.com/Particle-Academy/holy-sheet/blob/main/docs/ReadPath.md#opendocument-spreadsheets-ods);
+this port reads the same fixtures and is diffed against it.
 
 ## Moving between runtimes
 

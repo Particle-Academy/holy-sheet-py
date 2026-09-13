@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fancy-holy-sheet"
-version = "0.1.0"
+version = "0.2.0"
 description = "Zero-dependency xlsx writer + reader + formula linter for agentic document creation. The Python mirror of PHP particle-academy/holy-sheet and Node @particle-academy/holy-sheet."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [{ name = "Particle Academy" }]
-keywords = ["xlsx", "excel", "spreadsheet", "ooxml", "agent", "writer", "reader", "fancy", "human-plus"]
+keywords = ["xlsx", "ods", "opendocument", "excel", "spreadsheet", "ooxml", "agent", "writer", "reader", "fancy", "human-plus"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

@@ -205,6 +205,22 @@ file is byte-identical across all three repos and each pins its SHA-256 over
 CRLF-normalised content (`tests/test_schema_sync.py`). Edit one copy, edit all
 three, update all three constants.
 
+**`read()` sniffs the bytes and also reads `.ods`**, into the same schema, through
+`reader/ods_reader.py` (a port of PHP's `OdsReader`, which documents what maps).
+Three traps specific to it, each pinned by `tests/test_ods_reader.py`:
+
+- **An `Element` with no children is falsy.** `a.get(k) or b.get(k)` skips an
+  empty `<style:style/>` and resolves the wrong style. Compare with `is None`.
+- **Match OpenDocument attributes by URI** (`ods/ns.py`), never with the
+  local-name helpers in `reader/xml.py`: LibreOffice puts `office:value-type`
+  and `calcext:value-type` on the same cell.
+- **PHP string semantics, not Python's**: `php_trim` (ASCII only), ASCII-only regex
+  classes (`[0-9]`, and `re.ASCII` wherever `\b` appears), `php_round` for
+  fractional seconds.
+
+The ODS fixtures live in the PHP repo and are found beside its sources
+(`_oracle.ods_fixtures_dir`); missing fixtures are an error, not a skip.
+
 **Linter hint strings are byte-compared against PHP.** They contain em dashes
 (`Division by zero — the divisor evaluated to 0.`). A hyphen there is a parity
 failure.

@@ -22,6 +22,8 @@ from typing import Any
 
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
+from .reader.format_sniffer import FormatSniffer
+from .reader.ods_reader import OdsReader
 from .reader.xlsx_reader import XlsxReader
 from .schema.formula_linter import FormulaLinter
 from .schema.normalizer import Normalizer
@@ -110,12 +112,23 @@ def write(schema: Any, path: str) -> dict[str, Any]:
 
 
 def read(data: bytes) -> dict[str, Any]:
-    """Round-trip xlsx BYTES back to a Holy Sheet schema."""
+    """Round-trip xlsx or ods BYTES back to a Holy Sheet schema.
+
+    The format is told apart by content, never by name, and both describe to
+    the same schema. Raises `UnsupportedFormatException` (a `RuntimeError`) for
+    anything else.
+    """
+    return _read_spreadsheet(data, None)
+
+
+def _read_spreadsheet(data: bytes, path: str | None) -> dict[str, Any]:
+    if FormatSniffer.sniff(data, path) == FormatSniffer.ODS:
+        return OdsReader().describe(data)
     return XlsxReader().describe(data)
 
 
 def describe(path: str) -> dict[str, Any]:
-    """Round-trip an xlsx FILE back to a Holy Sheet schema.
+    """Round-trip an xlsx or ods FILE back to a Holy Sheet schema.
 
     Returns `{"error": "not_found", "path": ...}` for a missing path rather than
     raising -- an agent tool call that returns a structured miss is recoverable,
@@ -124,7 +137,7 @@ def describe(path: str) -> dict[str, Any]:
     if not os.path.isfile(path):
         return {"error": "not_found", "path": path}
     with open(path, "rb") as handle:
-        return XlsxReader().describe(handle.read())
+        return _read_spreadsheet(handle.read(), path)
 
 
 def tool_definition() -> dict[str, Any]:
