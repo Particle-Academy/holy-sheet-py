@@ -38,7 +38,11 @@ ERR_DIV0 = "#DIV/0!"
 ERR_CIRC = "#CIRC!"
 
 _CLEAN_REF = re.compile(r"^[A-Z]+\d+$")
-_HINT_REFS = re.compile(r"(?:([A-Za-z][A-Za-z0-9_]*)!)?\$?([A-Z]+)\$?(\d+)", re.IGNORECASE)
+# A sheet qualifier, quoted ('My Sheet'!) or bare (Sheet2!). Group 1 is the name
+# as written, quotes included.
+_SHEET_QUALIFIER = r"('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!"
+_SHEET_REFS = re.compile(_SHEET_QUALIFIER)
+_HINT_REFS = re.compile(r"(?:" + _SHEET_QUALIFIER + r")?\$?([A-Z]+)\$?(\d+)", re.IGNORECASE)
 
 
 class _LinterError(Exception):
@@ -50,8 +54,15 @@ class _LinterError(Exception):
 
 
 class FormulaLinter:
+    def __init__(self) -> None:
+        # Every sheet name, keyed by its lower-cased form. Excel matches sheet
+        # names without regard to case, and a reference to a sheet that is not
+        # here is #REF! rather than a range of blanks.
+        self._sheet_names: dict[str, str] = {}
+
     def lint(self, schema: Any) -> list[dict[str, str]]:
         workbook = Normalizer().normalize(schema)
+        self._sheet_names = {sheet.name.lower(): sheet.name for sheet in workbook.sheets}
         index = self._build_index(workbook)
         cache: dict[str, Any] = {}
         issues: list[dict[str, str]] = []
@@ -134,6 +145,25 @@ class FormulaLinter:
                     i += 1
                 tokens.append(("STRING", src[start:i]))
                 i += 1  # consume the closing quote
+                continue
+
+            # Quoted sheet name: 'My Sheet', with Excel's '' for a literal quote.
+            # Kept with its quotes; _clean_sheet_name() unwraps it. A quote that
+            # never closes is a syntax error, not a name running to the end.
+            if char == "'":
+                start = i
+                i += 1
+                while True:
+                    if i >= length:
+                        raise _LinterError(ERR_NAME)
+                    if src[i] == "'":
+                        if i + 1 < length and src[i + 1] == "'":
+                            i += 2
+                            continue
+                        i += 1
+                        break
+                    i += 1
+                tokens.append(("SHEET", src[start:i]))
                 continue
 
             # Identifier: cell ref, function name, or sheet name. `$` is allowed
@@ -264,20 +294,27 @@ class FormulaLinter:
             state.pos += 1
             return text
 
-        if kind == "IDENT":
-            # Sheet!Ref
+        # A quoted name is only ever a sheet qualifier. On its own it is not a
+        # value, so it falls through to #NAME? below.
+        if kind in ("SHEET", "IDENT"):
+            # Sheet!Ref: (SHEET | IDENT) '!' IDENT
             if (
                 state.pos + 2 < len(tokens)
                 and tokens[state.pos + 1] == ("OP", "!")
                 and tokens[state.pos + 2][0] == "IDENT"
             ):
-                sheet_name = _clean_sheet_name(text)
+                sheet_name = self._sheet_names.get(_clean_sheet_name(text).lower())
+                if sheet_name is None:
+                    raise _LinterError(ERR_REF)
                 state.pos += 2
                 start_token = tokens[state.pos][1]
                 state.pos += 1
                 return self._resolve_ref_or_range(
                     start_token, sheet_name, tokens, state, index, cache, stack
                 )
+
+            if kind == "SHEET":
+                raise _LinterError(ERR_NAME)
 
             # Function call
             if (
@@ -469,10 +506,7 @@ class FormulaLinter:
         if error == ERR_VALUE:
             return self._hint_value(formula, sheet, index, cache)
         if error == ERR_REF:
-            return (
-                "A cell reference points to a cell that doesn't exist in the workbook. "
-                "Check column letters and row numbers."
-            )
+            return self._hint_ref(formula)
         if error == ERR_NAME:
             return (
                 "The formula references an unknown function or has a syntax error. "
@@ -488,6 +522,25 @@ class FormulaLinter:
             )
         return "Formula evaluation failed."
 
+    def _hint_ref(self, formula: str) -> str:
+        """Name the sheet when that is what is missing.
+
+        "A cell doesn't exist" sends an agent to check column letters in a sheet
+        it never created.
+        """
+        for match in _SHEET_REFS.finditer(formula):
+            name = _clean_sheet_name(match.group(1))
+            if name.lower() not in self._sheet_names:
+                return (
+                    f"The formula refers to a sheet named '{name}', and this workbook has no such "
+                    f"sheet. Its sheets are: {', '.join(self._sheet_names.values())}. Quote a name "
+                    "that contains spaces or punctuation: 'My Sheet'!A1."
+                )
+        return (
+            "A cell reference points to a cell that doesn't exist in the workbook. "
+            "Check column letters and row numbers."
+        )
+
     def _hint_value(self, formula, sheet, index, cache) -> str:
         """Name the offending cell, and offer the row below when it is numeric.
 
@@ -498,7 +551,11 @@ class FormulaLinter:
         """
         offenders: list[str] = []
         for match in _HINT_REFS.finditer(formula):
-            sheet_name = match.group(1) or sheet
+            if match.group(1):
+                written = _clean_sheet_name(match.group(1))
+                sheet_name = self._sheet_names.get(written.lower(), written)
+            else:
+                sheet_name = sheet
             a1 = match.group(2).upper() + match.group(3)
             key = f"{sheet_name}!{a1}"
             cell = index.get(key)
@@ -544,9 +601,12 @@ def _clean_ref(ref: str) -> str | None:
 
 
 def _clean_sheet_name(name: str) -> str:
-    """Strip the single quotes Excel wraps around sheet names with spaces."""
+    """Unwrap the quotes Excel puts around a sheet name that needs them.
+
+    A doubled quote inside becomes one: 'Q3 ''Final''' is Q3 'Final'.
+    """
     if len(name) >= 2 and name[0] == "'" and name[-1] == "'":
-        return name[1:-1]
+        return name[1:-1].replace("''", "'")
     return name
 
 

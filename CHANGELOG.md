@@ -12,6 +12,18 @@ what moved.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-14
+
+### Fixed
+
+- **`lint()` accepts quoted sheet names** (holy-sheet [#6](https://github.com/Particle-Academy/holy-sheet/issues/6)). `=SUM('My Earnings Projection'!A2:A3)` linted as `#NAME?` because the tokenizer had no case for `'`, so any cross-sheet formula pointing at a sheet whose name contains a space failed. Excel's doubled-quote escape works too: `'Q3 ''Final'''!B2` is the sheet `Q3 'Final'`.
+- **A reference to a sheet that does not exist is `#REF!`**, quoted or not, and the hint names the sheet and lists the ones that exist. It used to lint clean, because the missing sheet's cells read as blanks.
+- **Sheet names match case-insensitively**, as in Excel.
+
+The same fix as `particle-academy/holy-sheet` 2.2.1, with the hint text identical in all three runtimes and pinned by a test in each.
+
+**What you must do:** nothing, unless you relied on a formula that names a missing sheet linting clean. It now reports `#REF!`.
+
 ## [0.2.0] - 2026-09-13
 
 ### Added

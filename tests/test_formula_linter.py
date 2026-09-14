@@ -209,3 +209,81 @@ def test_reports_every_broken_formula_not_just_the_first() -> None:
 
     errors = {issue["error"] for issue in holy_sheet.lint(schema)}
     assert errors == {"#VALUE!", "#NAME?", "#DIV/0!"}
+
+
+# Sheet names that need quoting -- holy-sheet issue #6, ported case for case.
+#
+# Excel quotes any sheet name that is not a bare identifier ('My Sheet'!A1) and
+# escapes a literal quote by doubling it ('Q3 ''Final'''!B2). The tokenizer had
+# no case for the quote, so every such reference linted as #NAME?.
+
+
+def _two_sheets(first: str, formula: str) -> dict:
+    return {
+        "sheets": [
+            {"name": first, "columns": [{"header": "Deal Size", "type": "number"}], "rows": [[9407], [9750]]},
+            {"name": "Summary", "columns": [{"header": "Total", "type": "number"}], "rows": [[{"formula": formula}]]},
+        ]
+    }
+
+
+def test_a_quoted_sheet_name_lints_like_an_unquoted_one() -> None:
+    assert holy_sheet.lint(_two_sheets("My Earnings Projection", "SUM('My Earnings Projection'!A2:A3)")) == []
+
+
+def test_a_quoted_sheet_reference_resolves_to_the_real_cell() -> None:
+    # A1 is the header text, so only a real lookup yields #VALUE!.
+    issues = holy_sheet.lint(_two_sheets("My Earnings Projection", "'My Earnings Projection'!A1*2"))
+
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#VALUE!"
+    assert 'A1 = "Deal Size" (string)' in issues[0]["hint"]
+    assert "Did you mean A2" in issues[0]["hint"]
+
+
+def test_a_doubled_quote_is_one_literal_quote_in_a_sheet_name() -> None:
+    assert holy_sheet.lint(_two_sheets("Q3 'Final'", "SUM('Q3 ''Final'''!A2:A3)")) == []
+
+
+def test_a_missing_quoted_sheet_is_ref_and_the_hint_names_it() -> None:
+    issues = holy_sheet.lint(_two_sheets("Deals", "SUM('No Such Sheet'!A2:A3)"))
+
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#REF!"
+    # Byte-for-byte the PHP and Node hint: an agent reads it, and the three
+    # engines must say the same thing.
+    assert issues[0]["hint"] == (
+        "The formula refers to a sheet named 'No Such Sheet', and this workbook has no such "
+        "sheet. Its sheets are: Deals, Summary. Quote a name that contains spaces or "
+        "punctuation: 'My Sheet'!A1."
+    )
+
+
+def test_a_missing_unquoted_sheet_is_ref() -> None:
+    issues = holy_sheet.lint(_two_sheets("Deals", "SUM(Nope!A2:A3)"))
+
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#REF!"
+
+
+def test_sheet_names_match_case_insensitively_as_excel_does() -> None:
+    assert holy_sheet.lint(_two_sheets("Deals", "SUM(deals!A2:A3)")) == []
+    assert holy_sheet.lint(_two_sheets("My Deals", "SUM('MY DEALS'!A2:A3)")) == []
+
+    issues = holy_sheet.lint(_two_sheets("Deals", "DEALS!A1*2"))
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#VALUE!"
+
+
+def test_a_quote_that_never_closes_is_name() -> None:
+    issues = holy_sheet.lint(_two_sheets("My Deals", "SUM('My Deals!A2:A3)"))
+
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#NAME?"
+
+
+def test_a_quoted_name_that_is_not_a_sheet_reference_is_name() -> None:
+    issues = holy_sheet.lint(_two_sheets("My Deals", "'My Deals'+1"))
+
+    assert len(issues) == 1
+    assert issues[0]["error"] == "#NAME?"
