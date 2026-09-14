@@ -125,9 +125,10 @@ def _special_diffs() -> dict[str, tuple[Any, Any]]:
 
     # PHP 2.3.2: widths keyed 0..n-1 (a JSON list), and a padded cell key
     # clear_cell cannot reach now that it trims. (A DIFF over a width key that is
-    # not an index is not here: diff() writes both schemas, and this package's
-    # Normalizer raises on `int("abc")` where PHP's casts it to column 0. The
-    # reducer cases below cover the op itself.)
+    # not an index is not here: since holy-sheet 2.3.4 / this port 0.3.2 such a
+    # schema is INVALID, so diff()'s same-file check refuses it in both engines.
+    # Before that, this package's Normalizer raised on `int("abc")` and PHP's
+    # cast it to column 0. The reducer cases below cover the op itself.)
     b = workbook()
     b["sheets"][0]["columnWidths"] = {0: 120, 1: 80, 2: 140}
     cases["widths keyed 0..n-1"] = (workbook(), b)

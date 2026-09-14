@@ -17,6 +17,7 @@ from typing import Any
 
 from ..exceptions import SchemaException
 from ..helpers.php import entries, is_array, is_list, type_of
+from . import column_widths
 from .repairer import Repairer
 
 _ALLOWED_COLUMN_TYPES = [
@@ -201,6 +202,41 @@ class Validator:
                     "Pick a built-in theme or omit for default.",
                 )
             )
+
+        widths = _get(sheet, "columnWidths")
+        if widths is not None:
+            if not is_array(widths):
+                errors.append(
+                    _error(
+                        f"{path}.columnWidths",
+                        "object keyed by 0-based column index",
+                        type_of(widths),
+                        widths,
+                        'Column widths map a 0-based column index to pixels: {"0": 120, "1": 80}.',
+                    )
+                )
+            else:
+                for key, px in entries(widths):
+                    if column_widths.index(key) is None:
+                        errors.append(
+                            _error(
+                                f"{path}.columnWidths.{key}",
+                                f"a 0-based column index from 0 to {column_widths.MAX_INDEX}",
+                                type_of(key),
+                                key,
+                                'Keys are 0-based column indexes: "0" is column A, "1" is column B. Use the index, not the letter.',
+                            )
+                        )
+                    elif column_widths.width(px) is None:
+                        errors.append(
+                            _error(
+                                f"{path}.columnWidths.{key}",
+                                "a non-negative number of pixels",
+                                type_of(px),
+                                px,
+                                "A width is a number of pixels, like 120.",
+                            )
+                        )
 
         return errors
 

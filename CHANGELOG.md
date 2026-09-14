@@ -12,6 +12,29 @@ what moved.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-15
+
+### Fixed
+
+- **A `columnWidths` key that is not a column index made `to_bytes()` raise.** The
+  normalizer did `int(key)`, so `{"abc": 999}` raised `ValueError` from
+  `to_bytes()`, `write()` and `diff()`. PHP overwrote column A with it and Node
+  wrote a NaN column; all three follow one rule now, mirroring PHP holy-sheet
+  2.3.4 (`holy_sheet/schema/column_widths.py`):
+  - a **key** is a 0-based column index from 0 to 16383, as an `int` or a string
+    of ASCII digits;
+  - a **width** is a non-negative finite number (not a `bool`), or a string of
+    digits (`"80.5"`).
+  - `validate()` reports each other entry by path (`sheets[0].columnWidths.abc`),
+    so `write()` and `to_bytes()` refuse it with `SchemaException` instead of
+    `ValueError`.
+  - `validate_and_repair()` turns a one- or two-letter key into its index (`"B"`
+    is 1) and drops an entry it cannot repair, and lists both.
+  - The normalizer skips such an entry.
+
+  **What you must do:** nothing, unless you caught `ValueError` from a bad width;
+  it is `SchemaException` now, from `validate()` first.
+
 ## [0.3.1] - 2026-09-15
 
 ### Fixed

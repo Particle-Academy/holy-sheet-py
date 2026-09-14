@@ -25,6 +25,7 @@ from ..workbook.merged_region import MergedRegion
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
 from ..writer.format.date_converter import DateConverter
+from . import column_widths
 from .theme import Theme
 
 _AGG_FUNCTIONS = ("SUM", "AVG", "COUNT", "MIN", "MAX")
@@ -175,7 +176,18 @@ class Normalizer:
         # turns numeric keys back into ints and Python does not, so the cast is
         # explicit here. Insertion order is preserved and IS observable -- it
         # decides the order of the `<col>` elements.
-        return {int(key): float(px) for key, px in entries(widths)}
+        #
+        # An entry that is not a column index and a width is skipped. `int(key)`
+        # raised ValueError for "abc" and took to_bytes() and diff() down with it
+        # (PHP 2.3.4 skips it too).
+        out: dict[int, float] = {}
+        for key, px in entries(widths):
+            index = column_widths.index(key)
+            width = column_widths.width(px)
+            if index is None or width is None:
+                continue
+            out[index] = width
+        return out
 
     def _column_format(self, column_def: Any) -> CellFormat | None:
         if not isinstance(column_def, dict):

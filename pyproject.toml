@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fancy-holy-sheet"
-version = "0.3.1"
+version = "0.3.2"
 description = "Zero-dependency xlsx writer + reader + formula linter for agentic document creation. The Python mirror of PHP particle-academy/holy-sheet and Node @particle-academy/holy-sheet."
 readme = "README.md"
 license = { file = "LICENSE" }

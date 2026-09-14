@@ -22,6 +22,7 @@ import re
 from typing import Any
 
 from ..helpers.php import is_array, is_list, is_numeric_string, numeric_string_to_number
+from . import column_widths
 
 _VALID_THEMES = ("default", "minimal", "plain", "business")
 _ISO_DATE = re.compile(
@@ -92,6 +93,32 @@ class Repairer:
             self._repairs.append(
                 f"changed '{path}.theme' from '{original}' to 'default' (unknown theme)"
             )
+
+        # Column widths: a letter key becomes its index; an entry that is still
+        # not a column index and a width is dropped, and said (PHP 2.3.4).
+        widths = sheet.get("columnWidths")
+        if isinstance(widths, (dict, list)):
+            repaired: dict[Any, Any] = {}
+            changed = False
+            for key, px in (widths.items() if isinstance(widths, dict) else enumerate(widths)):
+                index = column_widths.index(key)
+                if index is None:
+                    letters = column_widths.from_letters(key)
+                    if letters is not None:
+                        index = letters
+                        self._repairs.append(
+                            f"converted '{path}.columnWidths.{key}' to column index {index}"
+                        )
+                        changed = True
+                if index is None or column_widths.width(px) is None:
+                    self._repairs.append(
+                        f"dropped '{path}.columnWidths.{key}' (not a column index and a width)"
+                    )
+                    changed = True
+                    continue
+                repaired[index] = px
+            if changed:
+                sheet["columnWidths"] = repaired
 
         cells = sheet.get("cells")
         if isinstance(cells, dict):
