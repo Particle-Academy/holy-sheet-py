@@ -1,5 +1,7 @@
 # holy-sheet
 
+[![Fancified](art/fancified.svg)](https://particle.academy)
+
 Zero-dependency `.xlsx` **writer + reader + formula linter** for agentic document
 creation. The Python mirror of PHP
 [`particle-academy/holy-sheet`](https://github.com/Particle-Academy/holy-sheet)
