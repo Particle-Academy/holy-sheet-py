@@ -12,7 +12,7 @@ what moved.
 
 ## [Unreleased]
 
-## [0.3.2] - 2026-09-15
+## [0.3.2] - 2026-09-14
 
 ### Fixed
 
@@ -35,7 +35,7 @@ what moved.
   **What you must do:** nothing, unless you caught `ValueError` from a bad width;
   it is `SchemaException` now, from `validate()` first.
 
-## [0.3.1] - 2026-09-15
+## [0.3.1] - 2026-09-14
 
 ### Fixed
 
@@ -52,7 +52,7 @@ Six defects in the op code, mirroring `particle-academy/holy-sheet` 2.3.3, which
 
 **What you must do:** nothing, unless you relied on one of the above. `diff()` output changes only for a schema holding a padded cell key, where it matches PHP 2.3.3's, and `diff()` now raises on a value JSON cannot hold, which parsed JSON never contains.
 
-## [0.3.0] - 2026-09-15
+## [0.3.0] - 2026-09-14
 
 ### Added
 
