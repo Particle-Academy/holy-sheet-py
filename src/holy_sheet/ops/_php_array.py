@@ -318,7 +318,12 @@ def _sort_keys(value: Any, depth: int) -> Any:
         if not is_php_list(pairs):
             # ksort($value, SORT_STRING). Code-point order is UTF-8 byte order.
             pairs.sort(key=lambda pair: str(pair[0]))
-        children = [(key, _sort_keys(item, depth + 1)) for key, item in pairs]
+        # A plain loop, not a comprehension: on Python 3.11 a comprehension is a
+        # frame of its own, so recursing from one costs two frames per level and
+        # the 512 levels json_encode accepts overflow the default recursion limit.
+        children: list[tuple[Any, Any]] = []
+        for key, item in pairs:
+            children.append((key, _sort_keys(item, depth + 1)))
         # json_encode decides list-or-object AFTER the sort: {"1": b, "0": a} is [a, b].
         if is_php_list(children):
             return [item for _, item in children]
