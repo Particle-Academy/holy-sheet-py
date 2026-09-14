@@ -22,6 +22,10 @@ from typing import Any
 
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
+from .ops._php_array import is_array, is_php_list, php_pairs
+from .ops.sheet_diff import SheetDiff
+from .ops.sheet_op_schema import SheetOpSchema
+from .ops.sheet_reducer import SheetReducer
 from .reader.format_sniffer import FormatSniffer
 from .reader.ods_reader import OdsReader
 from .reader.xlsx_reader import XlsxReader
@@ -204,3 +208,50 @@ def lint(schema: Any) -> list[dict[str, str]]:
 def version() -> str:
     """This package's version."""
     return VERSION
+
+
+def diff(a: Any, b: Any) -> list[dict[str, Any]]:
+    """The ops that turn schema `a` into schema `b`.
+
+    - `reduce(a, diff(a, b))` equals `b` (key order aside).
+    - Schemas that write the same workbook diff to `[]`, so
+      `diff(s, read(to_bytes(s))) == []`: a save without a change records
+      nothing.
+    - One changed cell is one `set_cell`; an inserted row is one `insert_rows`
+      plus its cells.
+
+    Store `diff(new, old)` to keep a version as the ops that restore it. Both
+    schemas must be valid: the "same workbook" check writes them, and raises
+    `SchemaException` otherwise.
+
+    The PHP reference (`Agent::diff`, holy-sheet 2.3.0) returns the same ops in
+    the same order for the same input.
+    """
+    return SheetDiff.diff(a, b)
+
+
+def reduce(schema: Any, op_or_ops: Any) -> Any:
+    """Apply one op, or a list of them, to a schema; returns a new schema.
+
+    An op naming a sheet that is not there is skipped. Nothing passed in is
+    modified, and the result shares no mutable structure with the inputs.
+    """
+    if not is_array(op_or_ops):
+        raise TypeError(f"[holy-sheet] reduce() takes an op or a list of ops, got {type(op_or_ops).__name__}")
+    pairs = php_pairs(op_or_ops)
+    # PHP: `$opOrOps === [] || array_is_list($opOrOps) ? $opOrOps : [$opOrOps]`.
+    ops = [op for _, op in pairs] if is_php_list(pairs) else [op_or_ops]
+    return SheetReducer.apply_all(schema, ops)
+
+
+def op_schema() -> dict[str, Any]:
+    """JSON Schema for one op. `set_cell`, `set_range` and `set_workbook` are
+    fancy-sheets' `SheetOp` shapes."""
+    return SheetOpSchema.json_schema()
+
+
+def equivalent(a: Any, b: Any) -> bool:
+    """Whether two schemas write the same workbook: a columns/rows sheet and the
+    cell map it becomes are equivalent, and so are a schema without
+    `meta.created` and its written copy."""
+    return SheetDiff.equivalent(a, b)

@@ -39,7 +39,8 @@ Node is a minor behind on both.
 
 Module-level snake_case functions, mirroring PHP's static `Agent` and TS's
 `Agent` object: `validate`, `validate_and_repair`, `to_bytes`, `write`, `read`,
-`describe`, `lint`, `from_array`, `from_csv`, `tool_definition`, `version`.
+`describe`, `lint`, `from_array`, `from_csv`, `tool_definition`, `version`,
+`diff`, `reduce`, `op_schema`, `equivalent`.
 Lower-level classes keep their peer names (`Validator`, `Normalizer`,
 `XlsxWriter`, `XlsxReader`, `CellAddress`, …) so a reader moving between the
 three repos recognises them.
@@ -220,6 +221,32 @@ Three traps specific to it, each pinned by `tests/test_ods_reader.py`:
 
 The ODS fixtures live in the PHP repo and are found beside its sources
 (`_oracle.ods_fixtures_dir`); missing fixtures are an error, not a skip.
+
+**The ops (`ops/`) run on PHP arrays, not dicts.** `diff` must return PHP's op
+list, in PHP's order, for the same input (`tests/test_sheet_ops_parity_php.py`
+compares them through `scripts/php_ops.php`), and PHP's answer depends on array
+semantics a dict does not have. `ops/_php_array.py` holds them, and nothing in
+`ops/` should compare values any other way:
+
+- **`[]` and `{}` are one value, and so are `{"0": x}` and `[x]`.** `php_pairs`
+  normalises keys as PHP stores them; `canon` encodes a 0..n-1 map as a list.
+  That is why `columnWidths` from JSON (`{"0": 120}`) and from `describe()`
+  (`{0: 120.0}`) compare equal, and why a column shift returns int keys.
+- **Equality is `canon()` text or `identical()`, never `==`.** `True == 1 == 1.0`
+  in Python; PHP's `===` and its canonical JSON tell all three apart.
+- **`(int)` is `php_int_cast`, not `int()`**: `"12abc"` is 12, `"1e3"` is 1000,
+  an out-of-range float wraps modulo 2**64 and an out-of-range string saturates.
+- **Addresses parse with `parse_address`, not `CellAddress.parse`.** The latter
+  trims and upper-cases with Unicode rules and matches Unicode digits, so it
+  accepts `"\ufb001"` and `"A\u0661"`, which PHP rejects. The writer still uses
+  it; that divergence is known and not yet fixed.
+- **PHP's quirks are mirrored, not fixed**: a `type` of `true` is `remove_sheet`
+  (`switch` compares loosely), a padded address is stored untrimmed, and any two
+  values `json_encode` rejects (NaN, INF, invalid UTF-8) compare as the same.
+  Changing one changes the ops a history stores, in one runtime only.
+- **Internally the reducer shares structure** (`apply_shared`) and copies each
+  level it changes; the public entry points deep-copy once. Never mutate a value
+  inside `ops/` in place.
 
 **Linter hint strings are byte-compared against PHP.** They contain em dashes
 (`Division by zero — the divisor evaluated to 0.`). A hyphen there is a parity

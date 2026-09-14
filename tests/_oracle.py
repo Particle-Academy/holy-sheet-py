@@ -142,6 +142,39 @@ def php_describe(path: Path) -> object:
     return json.loads(result.stdout.decode("utf-8"))
 
 
+PHP_OPS_SCRIPT = REPO_ROOT / "scripts" / "php_ops.php"
+
+
+def php_ops(calls: list[dict]) -> list[dict]:
+    """Run a batch of `HolySheet\\Ops` calls in PHP; one result per call, in order.
+
+    See `scripts/php_ops.php` for the call shapes. Parsed with key order kept and
+    PHP's float/int distinction intact (JSON_PRESERVE_ZERO_FRACTION).
+    """
+    binary = php_binary()
+    src = php_src_root()
+    if binary is None or src is None or not PHP_OPS_SCRIPT.is_file():
+        raise RuntimeError("the PHP oracle is not available; call oracle_available() first")
+
+    with tempfile.TemporaryDirectory(prefix="holy-sheet-ops-") as tmp:
+        calls_path = Path(tmp) / "calls.json"
+        calls_path.write_text(json.dumps(calls), encoding="utf-8")
+
+        env = dict(os.environ)
+        env[_PHP_SRC_ENV] = str(src)
+        result = subprocess.run([binary, str(PHP_OPS_SCRIPT), str(calls_path)], capture_output=True, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"the PHP ops oracle exited {result.returncode}: "
+                f"{result.stderr.decode('utf-8', 'replace')[:2000]}"
+            )
+        results = json.loads(result.stdout.decode("utf-8"))
+
+    if len(results) != len(calls):
+        raise RuntimeError(f"the PHP ops oracle answered {len(results)} of {len(calls)} calls")
+    return results
+
+
 def ods_fixtures_dir() -> Path:
     """The ODS fixtures, which live in the PHP repo so all three engines read the same bytes.
 

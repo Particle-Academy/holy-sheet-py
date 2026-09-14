@@ -29,10 +29,14 @@ from .agent import (
     FEATURE_BASELINE,
     VERSION,
     describe,
+    diff,
+    equivalent,
     from_array,
     from_csv,
     lint,
+    op_schema,
     read,
+    reduce,
     to_bytes,
     tool_definition,
     validate,
@@ -43,6 +47,7 @@ from .agent import (
 from .exceptions import SchemaException, UnsupportedFormatException
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
+from .ops import SheetDiff, SheetOpSchema, SheetReducer
 from .reader.format_sniffer import FormatSniffer
 from .reader.ods_reader import OdsReader
 from .reader.xlsx_reader import XlsxReader
@@ -65,10 +70,14 @@ __all__ = [
     "__version__",
     # Agent surface.
     "describe",
+    "diff",
+    "equivalent",
     "from_array",
     "from_csv",
     "lint",
+    "op_schema",
     "read",
+    "reduce",
     "to_bytes",
     "tool_definition",
     "validate",
@@ -88,6 +97,9 @@ __all__ = [
     "Normalizer",
     "OdsReader",
     "Repairer",
+    "SheetDiff",
+    "SheetOpSchema",
+    "SheetReducer",
     "Theme",
     "Validator",
     "XlsxReader",

@@ -12,6 +12,24 @@ what moved.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-15
+
+### Added
+
+- **`diff()`, `reduce()`, `op_schema()` and `equivalent()`: a workbook's versions stored as ops** (holy-sheet [#7](https://github.com/Particle-Academy/holy-sheet/issues/7)). Hashing xlsx bytes cannot keep a one-cell edit small, because a zip changes nearly every byte, so a version history had to store a whole file per edit. `diff(new, old)` is the op list that restores `old` from `new`. Ported from `particle-academy/holy-sheet` 2.3.0, which is the reference, with the op schema as corrected in 2.3.1.
+  - `reduce(a, diff(a, b))` equals `b`, key order aside. The ops are verified by replaying them: a sheet the granular ops cannot reproduce is replaced whole, and so, as a last resort, is the workbook.
+  - One changed cell is one `set_cell`. Rows and columns are aligned by content first, so an inserted row is one `insert_rows` plus its cells rather than every cell below it rewritten.
+  - Schemas that write the same workbook diff to `[]`, so a save without a change records nothing. A columns/rows sheet and the cells it becomes are the same, and so is the creation time the writer stamps on a schema that names none.
+  - `set_cell`, `set_range` and `set_workbook` are fancy-sheets' `SheetOp` shapes and behave as its reducer does (a `set_cell` without a formula clears it and keeps the format). The rest are holy-sheet's: `clear_cell`, `insert_rows`/`delete_rows`, `insert_columns`/`delete_columns`, `add_sheet`/`remove_sheet`/`rename_sheet`/`move_sheet`/`replace_sheet`, `set_merged_regions`, `set_column_widths`, `set_frozen` and `set_meta`.
+  - Row and column ops move cells, merged regions and column widths. They do not rewrite formula text; a formula that changes with an insert is its own `set_cell`.
+  - `op_schema()` accepts `set_column_widths` with an empty `columnWidths` array, which is what `diff()` emits when every width is removed (PHP 2.3.1's fix, taken here before the first release).
+
+  **The same ops as PHP, not merely ops that work.** A history written by one runtime is replayed by the other, so `tests/test_sheet_ops_parity_php.py` sends 214 calls to the PHP reference through a new `scripts/php_ops.php` and compares each result as the JSON PHP prints: op order, op key order, int versus float. The cases are every edit in both directions, the branches of the rename pairing, a seeded run of random op lists (diffed and reduced), the reducer's edge cases, `equivalent` pairs, the op schema and `hunks`. `tests/test_sheet_ops.py` ports PHP's `SheetOpsTest.php` case for case, including its seeded random-edit run (`random.Random(20260915)`).
+
+  Python differs from PHP where its builtins do, and the port follows PHP each time: `True == 1` and `1 == 1.0` in Python but not in PHP's comparisons; `(int)` is not `int()`; a PHP array is both a list and a map, so `{"0": 120}` is `[120]`. `columnWidths` keys arrive from JSON as strings, and a column insert or delete returns them as integers (`(int) $key`, as PHP does, and the keys `describe()` returns). `SheetDiff`, `SheetReducer` and `SheetOpSchema` are exported under their PHP names.
+
+  **What you must do:** nothing; this only adds functions. One side effect: `from holy_sheet import *` now binds `diff` and `reduce`, so a star import placed after `from functools import reduce` replaces it.
+
 ## [0.2.1] - 2026-09-14
 
 ### Fixed

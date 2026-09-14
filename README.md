@@ -84,6 +84,10 @@ Module-level functions — no class to instantiate, no DI container:
 | `from_array(rows, headers=None, sheet_name="Sheet 1", options=None)` | schema, with inferred column types |
 | `from_csv(csv_or_path, options=None)` | schema, from CSV content **or** a path |
 | `tool_definition()` | the JSON Schema, for LLM tool-use |
+| `diff(a, b)` | the ops that turn schema `a` into `b` |
+| `reduce(schema, op_or_ops)` | a new schema with the ops applied |
+| `op_schema()` | the JSON Schema for one op |
+| `equivalent(a, b)` | whether two schemas write the same workbook |
 | `version()` | this package's version |
 
 `tool_definition()` is byte-identical across all three engines and checksum-pinned
@@ -93,7 +97,8 @@ definition and every backend describes the same tool.
 Lower-level services are exported under their peer names for when you want to
 inject them: `Validator`, `Repairer`, `Normalizer`, `FormulaLinter`, `Inference`,
 `Theme`, `XlsxWriter`, `XlsxReader`, `OdsReader`, `FormatSniffer`, `ArrayBuilder`,
-`CsvBuilder`, `CellAddress`, `SchemaException`, `UnsupportedFormatException`.
+`CsvBuilder`, `CellAddress`, `SheetDiff`, `SheetReducer`, `SheetOpSchema`,
+`SchemaException`, `UnsupportedFormatException`.
 
 ### Reading OpenDocument spreadsheets
 
@@ -111,6 +116,49 @@ raises `UnsupportedFormatException` (a `RuntimeError`, with the declared
 package's [`docs/ReadPath.md`](https://github.com/Particle-Academy/holy-sheet/blob/main/docs/ReadPath.md#opendocument-spreadsheets-ods);
 this port reads the same fixtures and is diffed against it.
 
+### Versions as ops
+
+An agent that edits a workbook needs a history, and hashing xlsx bytes cannot
+keep a one-cell edit small: a zip changes nearly every byte. `diff` keeps each
+version as the ops that restore it instead.
+
+```python
+ops = holy_sheet.diff(new, old)          # store these with the new version
+old_again = holy_sheet.reduce(new, ops)  # equals `old`, key order aside
+```
+
+- **`reduce(a, diff(a, b))` equals `b`.** The ops are verified by replaying
+  them; a sheet they cannot reproduce is replaced whole, and as a last resort so
+  is the workbook.
+- **Small edits stay small.** One changed cell is one `set_cell`. Rows and
+  columns are aligned by content first, so an inserted row is one `insert_rows`
+  plus its cells.
+- **A save without a change records nothing.** Schemas that write the same
+  workbook diff to `[]`: an authored columns/rows sheet and the cells
+  `describe()` reads back from it, or a schema without `meta.created` and its
+  written copy. `equivalent(a, b)` is that check on its own. Both schemas must
+  be valid, because the check writes them.
+- **`reduce` is pure.** Nothing passed in is modified, the result shares no
+  mutable structure with it, and an op naming a sheet that is not there is
+  skipped rather than raised.
+
+The ops: `set_cell`, `set_range`, `set_workbook` (fancy-sheets' `SheetOp` shapes,
+with its semantics: a `set_cell` without `formula` clears the formula and keeps
+the format and comment, `null` clears those), `clear_cell`, `insert_rows`,
+`delete_rows`, `insert_columns`, `delete_columns`, `add_sheet`, `remove_sheet`,
+`rename_sheet`, `move_sheet`, `replace_sheet`, `set_merged_regions`,
+`set_column_widths`, `set_frozen` and `set_meta`. `op_schema()` is the JSON
+Schema for one of them, to validate stored ops or to hand an LLM as a tool.
+
+Row and column ops move cells, merged regions and column widths; they do not
+rewrite formula text. After a column insert or delete, `columnWidths` has
+integer keys, the keys `describe()` returns, even where the schema came from
+JSON with string keys.
+
+**The same input gives the same ops, in the same order, as PHP's
+`Agent::diff`**, so a history written by a Laravel app replays here and the
+other way round. The parity suite runs the PHP package and compares op lists.
+
 ## Moving between runtimes
 
 The schema does not change. Only the call shape does.
@@ -127,6 +175,8 @@ The schema does not change. Only the call shape does.
 | from rows | `Agent::fromArray($rows, $headers)` | `Agent.fromArray(rows, headers)` | `holy_sheet.from_array(rows, headers)` |
 | from CSV | `Agent::fromCsv($csvOrPath)` | `Agent.fromCsv(csv)` | `holy_sheet.from_csv(csv_or_path)` |
 | tool schema | `Agent::toolDefinition()` | `Agent.toolDefinition()` | `holy_sheet.tool_definition()` |
+| diff two schemas | `Agent::diff($a, $b)` | `Agent.diff(a, b)` | `holy_sheet.diff(a, b)` |
+| apply ops | `Agent::reduce($schema, $ops)` | `Agent.reduce(schema, ops)` | `holy_sheet.reduce(schema, ops)` |
 
 Three differences worth knowing, each deliberate:
 
