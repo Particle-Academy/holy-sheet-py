@@ -1,6 +1,6 @@
 """diff / reduce / op_schema / equivalent (holy-sheet #7).
 
-A port of PHP holy-sheet 2.3.1's `tests/Unit/SheetOpsTest.php`, case for case,
+A port of PHP holy-sheet 2.3.3's `tests/Unit/SheetOpsTest.php`, case for case,
 followed by the semantics the PHP suite leaves implicit. What a version history
 built on these needs, pinned:
 
@@ -366,8 +366,61 @@ def test_emits_ops_its_own_schema_accepts_when_every_column_width_is_removed() -
     assert json.dumps(php_json_view(ops[0]["columnWidths"])) == "[]"
     assert ops[0]["columnWidths"] == []  # the same value PHP's diff holds, not Node's {}
     assert "array" in declared
-    assert variant["properties"]["columnWidths"]["maxItems"] == 0
     assert SheetDiff.same(holy_sheet.reduce(a, ops), b)
+
+
+def test_emits_ops_its_own_schema_accepts_when_widths_run_0_to_n_1_which_php_encodes_as_a_list() -> None:
+    # PHP 2.3.2, found by this port: 2.3.1 allowed only an EMPTY list, but PHP
+    # encodes widths for columns A, B, C as `[120, 80, 140]`.
+    a = workbook()
+    b = workbook()
+    b["sheets"][0]["columnWidths"] = {0: 120, 1: 80, 2: 140}
+
+    ops = holy_sheet.diff(a, b)
+    assert json.dumps(php_json_view(ops[0]["columnWidths"]), separators=(",", ":")) == "[120,80,140]"
+
+    variant = next(v for v in holy_sheet.op_schema()["oneOf"] if v["properties"]["type"]["const"] == "set_column_widths")
+    widths = variant["properties"]["columnWidths"]
+
+    assert "maxItems" not in widths
+    assert widths["items"] == {"type": "number", "minimum": 0}
+
+
+def test_ignores_an_op_whose_type_is_not_a_string_instead_of_matching_a_case_loosely() -> None:
+    # PHP 2.3.2. `switch` compares loosely: `type: true` matched `remove_sheet`,
+    # and 0.3.0 mirrored that.
+    w = workbook()
+
+    assert identical(holy_sheet.reduce(w, {"type": True, "sheet": "Q3"}), w)
+    assert identical(holy_sheet.reduce(w, {"type": 0, "sheet": "Q3"}), w)
+
+
+def test_trims_an_address_so_a_padded_one_reaches_the_cell_it_names() -> None:
+    w = workbook()
+
+    set_ = holy_sheet.reduce(w, {"type": "set_cell", "sheet": "Q3", "address": " b3 ", "value": 1})
+    assert " B3 " not in set_["sheets"][0]["cells"]
+    assert identical(set_["sheets"][0]["cells"]["B3"], {"value": 1})
+
+    cleared = holy_sheet.reduce(w, {"type": "clear_cell", "sheet": "Q3", "address": " a2 "})
+    assert "A2" not in cleared["sheets"][0]["cells"]
+
+
+def test_drops_a_column_width_key_that_is_not_a_column_index_instead_of_reading_it_as_column_a() -> None:
+    # The junk key comes AFTER column A's width, so reading it as column A would
+    # overwrite 10 with 999.
+    w = {"sheets": [{"name": "S", "cells": {}, "columnWidths": {0: 10, "abc": 999, 1: 20}}]}
+
+    moved = holy_sheet.reduce(w, {"type": "insert_columns", "sheet": "S", "at": 1, "count": 1})
+
+    assert identical(moved["sheets"][0]["columnWidths"], {1: 10, 2: 20})
+
+
+def test_refuses_to_compare_values_json_cannot_hold_instead_of_calling_them_the_same() -> None:
+    # Both used to encode to "" and compare equal. PHP's invalid UTF-8 bytes
+    # "\xB1" and "\xB2" are what `surrogateescape` decodes to these.
+    with pytest.raises(ValueError):
+        SheetDiff.same("\udcb1", "\udcb2")
 
 
 def test_aligns_rows_by_content_breaking_ties_toward_deleting_first() -> None:
@@ -375,6 +428,22 @@ def test_aligns_rows_by_content_breaking_ties_toward_deleting_first() -> None:
     assert SheetDiff.hunks(["a", "b", "c"], ["a", "c"]) == [[1, 1, 0]]
     assert SheetDiff.hunks(["a", "b"], ["a", "z"]) == [[1, 1, 1]]
     assert SheetDiff.hunks(["a"], ["a"]) == []
+
+
+def test_skips_an_op_whose_position_or_count_is_not_a_number_instead_of_reading_it_as_0() -> None:
+    # PHP 2.3.3.
+    w = workbook()
+
+    # `(int) "last"` is 0: these moved Notes to the front, inserted a sheet
+    # there, and unfroze the header row.
+    assert identical(holy_sheet.reduce(w, {"type": "move_sheet", "sheet": "Notes", "toIndex": "last"}), w)
+    assert identical(holy_sheet.reduce(w, {"type": "add_sheet", "index": "end", "sheet": {"name": "X", "cells": []}}), w)
+    assert identical(holy_sheet.reduce(w, {"type": "set_frozen", "sheet": "Q3", "rows": "one", "cols": 0}), w)
+    assert identical(holy_sheet.reduce(w, {"type": "insert_rows", "sheet": "Q3", "at": 2, "count": "2x"}), w)
+
+    # Ints, digit strings and absent defaults still work.
+    assert holy_sheet.reduce(w, {"type": "move_sheet", "sheet": "Notes", "toIndex": "0"})["sheets"][0]["name"] == "Notes"
+    assert holy_sheet.reduce(w, {"type": "add_sheet", "sheet": {"name": "X", "cells": []}})["sheets"][2]["name"] == "X"
 
 
 # --------------------------------------------------------------------------
@@ -448,11 +517,15 @@ class TestSetCell:
         w = workbook()
         assert identical(holy_sheet.reduce(w, {"type": "set_cell", "sheet": "Q3", "address": "9C", "value": 1}), w)
 
-    def test_a_padded_address_is_stored_untrimmed_as_php_does(self) -> None:
-        # PHP upper-cases the address, validates the TRIMMED form, and keys the
-        # cell by the untrimmed one. Mirrored, not fixed.
-        result = holy_sheet.reduce({"sheets": [{"name": "A", "cells": {}}]}, {"type": "set_cell", "sheet": "A", "address": " a1 ", "value": 1})
-        assert list(result["sheets"][0]["cells"]) == [" A1 "]
+    def test_a_padded_address_is_trimmed_with_phps_character_set(self) -> None:
+        # PHP 2.3.2 trims before keying the cell. `trim()`'s set is space, tab,
+        # LF, CR, NUL and vertical tab; not `str.strip()`'s, which takes NBSP too.
+        empty = {"sheets": [{"name": "A", "cells": {"A1": {"value": 0}}}]}
+        result = holy_sheet.reduce(empty, {"type": "set_cell", "sheet": "A", "address": "\t\n\r\x00\x0bb2\x0b ", "value": 1})
+        assert list(result["sheets"][0]["cells"]) == ["A1", "B2"]
+        assert identical(holy_sheet.reduce(empty, {"type": "set_cell", "sheet": "A", "address": "\u00a0b2", "value": 1}), empty)
+        cleared = holy_sheet.reduce(empty, {"type": "clear_cell", "sheet": "A", "address": "\x00a1\n"})
+        assert cleared["sheets"][0]["cells"] == {}
 
 
 class TestStructure:
@@ -512,12 +585,19 @@ class TestStructure:
 class TestColumnWidthKeys:
     """JSON makes `columnWidths` keys strings; PHP makes them ints with `(int)`."""
 
-    def test_a_column_shift_casts_keys_as_php_does_and_returns_int_keys(self) -> None:
+    def test_a_column_shift_drops_keys_that_are_not_indexes_and_returns_int_keys(self) -> None:
         w = {"sheets": [{"name": "S", "columnWidths": {"abc": 5, "3": 7, "1.5": 9}}]}
         result = holy_sheet.reduce(w, {"type": "insert_columns", "sheet": "S", "at": 1, "count": 1})
-        # PHP 8.4 prints {"1":5,"2":9,"4":7} for the same input.
-        assert identical(result["sheets"][0]["columnWidths"], {1: 5, 2: 9, 4: 7})
+        # PHP 2.3.3 prints {"4":7} for the same input (2.3.1 printed {"1":5,"2":9,"4":7}).
+        assert identical(result["sheets"][0]["columnWidths"], {4: 7})
         assert all(type(key) is int for key in result["sheets"][0]["columnWidths"])
+
+    def test_an_index_is_an_int_key_or_a_digit_string_as_ctype_digit_reads_it(self) -> None:
+        w = {"sheets": [{"name": "S", "columnWidths": {"007": 70, "1.5": 15, "": 1, "-0": 2, "-1": 5, "99999999999999999999": 3, "٣": 4}}]}
+        result = holy_sheet.reduce(w, {"type": "delete_columns", "sheet": "S", "at": 1, "count": 1})
+        # PHP 2.3.3 prints {"-1":5,"6":70,"9223372036854775806":3}: "-1" is an int
+        # key, "007" and the saturating digit string pass ctype_digit.
+        assert identical(result["sheets"][0]["columnWidths"], {-1: 5, 6: 70, 9223372036854775806: 3})
 
     def test_string_and_int_keys_are_one_key_to_same(self) -> None:
         assert SheetDiff.same({"columnWidths": {"0": 120, "1": 140}}, {"columnWidths": {0: 120, 1: 140}})
@@ -597,15 +677,40 @@ class TestPhpSemantics:
         assert _types(ops) == ["replace_sheet"]
         assert identical(holy_sheet.reduce(a, ops), b)
 
-    def test_canon_of_what_json_encode_rejects_is_empty(self) -> None:
-        assert canon(float("nan")) == ""
-        assert canon({"a": float("inf")}) == ""
-        assert canon("\ud800") == ""
-        deep: Any = 1
-        for _ in range(512):
-            deep = [deep]
-        assert canon(deep) != ""
-        assert canon([deep]) == ""
+    @pytest.mark.parametrize(
+        "value",
+        [float("nan"), float("inf"), {"a": -float("inf")}, "\ud800", ["ok", "\udcb1"], {"\udcb1": 1}, 10**400],
+        ids=["nan", "inf", "nested -inf", "lone surrogate", "in a list", "in a key", "an int no float holds"],
+    )
+    def test_canon_raises_on_what_json_encode_rejects(self, value: Any) -> None:
+        # PHP 2.3.2 throws JsonException where 2.3.1 compared both sides as "".
+        with pytest.raises(ValueError):
+            canon(value)
+        with pytest.raises(ValueError):
+            SheetDiff.same(1, value)
+
+    def test_a_diff_over_values_json_cannot_hold_raises_rather_than_recording_no_change(self) -> None:
+        a = {"sheets": [{"name": "S", "cells": {"A1": {"value": float("nan")}}}]}
+        b = {"sheets": [{"name": "S", "cells": {"A1": {"value": float("inf")}}}]}
+        with pytest.raises(ValueError):
+            holy_sheet.diff(a, b)
+
+    @pytest.mark.parametrize("as_map", [False, True], ids=["lists", "maps"])
+    def test_canon_goes_exactly_as_deep_as_json_encode_with_depth_4096(self, as_map: bool) -> None:
+        # PHP 8.4 printed these boundaries for SheetDiff::same: every array is a
+        # level, an empty one included. canon() is a loop, so Python's recursion
+        # limit (1000) is not what decides.
+        def nest(leaf: Any, levels: int) -> Any:
+            for _ in range(levels):
+                leaf = {"k": leaf} if as_map else [leaf]
+            return leaf
+
+        assert SheetDiff.same(nest(1, 4096), nest(1, 4096))
+        with pytest.raises(ValueError):
+            canon(nest(1, 4097))
+        assert SheetDiff.same(nest([], 4095), nest({}, 4095))
+        with pytest.raises(ValueError):
+            canon(nest([], 4096))
 
     @pytest.mark.parametrize(
         ("value", "expected"),
@@ -647,11 +752,49 @@ class TestPhpSemantics:
     def test_ops_parse_addresses_as_php_does(self, address: str, expected: Any) -> None:
         assert parse_address(address) == expected
 
-    def test_a_true_type_matches_php_switchs_first_case(self) -> None:
-        # PHP's `switch` compares loosely and `true == 'remove_sheet'`. Mirrored, not fixed.
+    def test_a_type_that_is_not_an_op_type_string_is_skipped(self) -> None:
+        # PHP 2.3.2. Its loose `switch` made `true` `remove_sheet`; 0.3.0 mirrored that.
         w = {"sheets": [{"name": "A", "cells": {}}, {"name": "B"}]}
-        assert [s["name"] for s in holy_sheet.reduce(w, {"type": True, "sheet": "B"})["sheets"]] == ["A"]
-        assert identical(holy_sheet.reduce(w, {"type": 1, "sheet": "B"}), w)
+        for op_type in (True, 1, None, ["remove_sheet"], "REMOVE_SHEET"):
+            assert identical(holy_sheet.reduce(w, {"type": op_type, "sheet": "B"}), w)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        # What PHP 2.3.3's `SheetReducer::integer()` returns for each.
+        [
+            (3, 3),
+            (-3, -3),
+            ("007", 7),
+            ("99999999999999999999", 9223372036854775807),
+            (True, None),
+            (2.0, None),
+            (None, None),
+            ("", None),
+            (" 1", None),
+            ("-1", None),
+            ("1e3", None),
+            ("٣", None),
+            (2**63, None),
+        ],
+    )
+    def test_positions_read_as_php_s_integer_helper(self, value: Any, expected: Any) -> None:
+        assert SheetReducer.integer(value) == expected
+        assert type(SheetReducer.integer(value)) is type(expected)
+
+    def test_a_present_position_that_is_not_a_number_skips_any_op_that_reaches_a_sheet(self) -> None:
+        # PHP 2.3.3 checks every position field on every op past the sheet lookup,
+        # so null counts as present and a junk count on a set_cell skips it too.
+        w = workbook()
+        for op in (
+            {"type": "add_sheet", "index": None, "sheet": {"name": "X"}},
+            {"type": "move_sheet", "sheet": "Q3", "toIndex": 1.0},
+            {"type": "set_cell", "sheet": "Q3", "address": "A1", "value": 1, "count": "x"},
+            {"type": "remove_sheet", "sheet": "Notes", "at": None},
+            {"type": "set_frozen", "sheet": "Q3", "rows": True},
+        ):
+            assert identical(holy_sheet.reduce(w, op), w), op
+        frozen = holy_sheet.reduce(w, {"type": "set_frozen", "sheet": "Q3", "cols": "2"})["sheets"][0]
+        assert ("frozenRows" in frozen, frozen["frozenCols"]) == (False, 2)
 
 
 class TestEquivalent:

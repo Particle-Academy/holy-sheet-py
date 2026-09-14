@@ -240,10 +240,17 @@ semantics a dict does not have. `ops/_php_array.py` holds them, and nothing in
   trims and upper-cases with Unicode rules and matches Unicode digits, so it
   accepts `"\ufb001"` and `"A\u0661"`, which PHP rejects. The writer still uses
   it; that divergence is known and not yet fixed.
-- **PHP's quirks are mirrored, not fixed**: a `type` of `true` is `remove_sheet`
-  (`switch` compares loosely), a padded address is stored untrimmed, and any two
-  values `json_encode` rejects (NaN, INF, invalid UTF-8) compare as the same.
-  Changing one changes the ops a history stores, in one runtime only.
+- **PHP's quirks are mirrored, not fixed here.** A quirk found in this port is
+  fixed in PHP first and then mirrored, because changing one in one runtime
+  changes the ops a history stores in that runtime only. holy-sheet 2.3.2 fixed
+  five found here and 2.3.3 a sixth, and each rule is now PHP's: a `type` that is not a
+  string naming an op type skips the op; addresses are trimmed with `trim()`'s
+  set (`php_trim`) before upper-casing; a `columnWidths` key that is not an
+  index (`is_index_key`) is dropped on a column shift; `canon()` raises
+  `ValueError` where `json_encode` throws (NaN, INF, a lone surrogate, more than
+  4096 nested arrays), walking an explicit stack so the recursion limit does not
+  decide; and a present position or count that `php_integer` refuses (anything
+  but an int or a digit string, `None` and `True` included) skips the op.
 - **Internally the reducer shares structure** (`apply_shared`) and copies each
   level it changes; the public entry points deep-copy once. Never mutate a value
   inside `ops/` in place.

@@ -1,6 +1,6 @@
 """Apply sheet ops to a Holy Sheet schema, returning a new schema.
 
-Mirrors PHP `Ops\\SheetReducer` (holy-sheet 2.3.0), which is normative: the same
+Mirrors PHP `Ops\\SheetReducer` (holy-sheet 2.3.3), which is normative: the same
 op on the same schema gives the same schema in both runtimes, and
 `tests/test_sheet_ops_parity_php.py` checks it against PHP.
 
@@ -30,10 +30,17 @@ change to that cell, and a diff records it as one.
 JSON object keys arrive as strings (`{"0": 120}`); PHP's `json_decode` makes
 them integers and Python's does not. `insert_columns` / `delete_columns` do what
 PHP does, `(int) $key`, and write the moved widths back with INTEGER keys in
-ascending order -- the same keys `describe()` returns. So `"abc"` counts as
-column 0 and `"1.5"` as column 1, as in PHP. `set_column_widths` stores the op's
-map as given, string keys and all. Comparisons (`SheetDiff.same`) treat `"0"`
-and `0` as one key, as a PHP array does.
+ascending order -- the same keys `describe()` returns. A key that is not a
+column index (not an int key, and not a string of digits) is dropped, as in PHP
+2.3.2: `"abc"` and `"1.5"` go, `"007"` is column 7. `set_column_widths` stores
+the op's map as given, string keys and all. Comparisons (`SheetDiff.same`) treat
+`"0"` and `0` as one key, as a PHP array does.
+
+## Positions and counts
+
+`index`, `toIndex`, `rows`, `cols`, `at` and `count` are read with
+:func:`php_integer` (PHP 2.3.3): an int or a string of digits. A PRESENT value
+that is neither, null included, skips the op; an absent one keeps its default.
 """
 
 from __future__ import annotations
@@ -47,42 +54,35 @@ from ._php_array import (
     get,
     has,
     is_array,
+    is_index_key,
     php_int_cast,
+    php_integer,
     php_key,
     php_pairs,
     php_string_cast,
+    php_trim,
     parse_address,
     values,
     writable,
 )
+from .sheet_op_schema import SheetOpSchema
 
 #: Sheet keys the granular ops address. A sheet with any other key is authored form.
 CELL_FORM_KEYS = ("name", "cells", "mergedRegions", "columnWidths", "frozenRows", "frozenCols")
 
-# The `switch` cases of PHP's apply(), in source order. `switch` compares
-# LOOSELY, so an op whose `type` is `true` matches the first case.
-_SWITCH_CASES = (
-    "remove_sheet",
-    "rename_sheet",
-    "move_sheet",
-    "replace_sheet",
-    "set_merged_regions",
-    "set_column_widths",
-    "set_frozen",
-    "set_cell",
-    "set_range",
-    "clear_cell",
-    "insert_rows",
-    "delete_rows",
-    "insert_columns",
-    "delete_columns",
-)
+#: Op fields that hold a position or a count (PHP 2.3.3's guard, in its order).
+_POSITION_FIELDS = ("index", "toIndex", "rows", "cols", "at", "count")
 
 
 class SheetReducer:
     """Namespace class, mirroring PHP's static `SheetReducer`."""
 
     CELL_FORM_KEYS = CELL_FORM_KEYS
+
+    @staticmethod
+    def integer(value: Any) -> int | None:
+        """PHP `SheetReducer::integer()`: an int, or a string of digits; anything else is None."""
+        return php_integer(value)
 
     @staticmethod
     def apply_all(schema: Any, ops: Any) -> Any:
@@ -111,6 +111,11 @@ def apply_shared(schema: Any, op: Any) -> Any:
     _require_array(op, "op")
     op_type = get(op, "type")
 
+    # A string, compared strictly (PHP 2.3.2). PHP's `switch` compared loosely,
+    # so `type: true` matched the first case and REMOVED a sheet.
+    if not isinstance(op_type, str) or op_type not in SheetOpSchema.TYPES:
+        return schema
+
     if _strict(op_type, "set_workbook"):
         data = get(op, "data")
         return data if is_array(data) else schema
@@ -131,8 +136,10 @@ def apply_shared(schema: Any, op: Any) -> Any:
         sheet = get(op, "sheet")
         if not is_array(sheet):
             return schema
-        index = max(0, min(len(sheets), php_int_cast(get(op, "index", len(sheets)))))
-        sheets.insert(index, sheet)
+        index = php_integer(op["index"]) if has(op, "index") else len(sheets)
+        if index is None:
+            return schema
+        sheets.insert(max(0, min(len(sheets), index)), sheet)
         out = writable(schema)
         out["sheets"] = sheets
         return out
@@ -141,7 +148,14 @@ def apply_shared(schema: Any, op: Any) -> Any:
     if at is None:
         return schema
 
-    case = _switch(op_type)
+    # Positions and counts are ints or digit strings (PHP 2.3.3). A present value
+    # that is neither skips the op: `(int)` read junk as 0, which moved a sheet to
+    # the front, inserted one there, or unfroze panes.
+    for field in _POSITION_FIELDS:
+        if has(op, field) and php_integer(op[field]) is None:
+            return schema
+
+    case = op_type
 
     if case == "remove_sheet":
         del sheets[at]
@@ -151,7 +165,7 @@ def apply_shared(schema: Any, op: Any) -> Any:
         sheets[at] = renamed
     elif case == "move_sheet":
         moved = sheets.pop(at)
-        to = max(0, min(len(sheets), php_int_cast(get(op, "toIndex", at))))
+        to = max(0, min(len(sheets), _position(op, "toIndex", at)))
         sheets.insert(to, moved)
     elif case == "replace_sheet":
         data = get(op, "data")
@@ -162,8 +176,8 @@ def apply_shared(schema: Any, op: Any) -> Any:
     elif case == "set_column_widths":
         sheets[at] = _set_or_unset_array(sheets[at], "columnWidths", get(op, "columnWidths", []))
     elif case == "set_frozen":
-        sheets[at] = _set_or_unset_int(sheets[at], "frozenRows", php_int_cast(get(op, "rows", 0)))
-        sheets[at] = _set_or_unset_int(sheets[at], "frozenCols", php_int_cast(get(op, "cols", 0)))
+        sheets[at] = _set_or_unset_int(sheets[at], "frozenRows", _position(op, "rows", 0))
+        sheets[at] = _set_or_unset_int(sheets[at], "frozenCols", _position(op, "cols", 0))
     elif case == "set_cell":
         sheets[at] = _set_cell(sheets[at], op)
     elif case == "set_range":
@@ -171,13 +185,13 @@ def apply_shared(schema: Any, op: Any) -> Any:
     elif case == "clear_cell":
         sheets[at] = _clear_cell(sheets[at], op)
     elif case == "insert_rows":
-        sheets[at] = _shift_rows(sheets[at], php_int_cast(get(op, "at", 0)), max(0, php_int_cast(get(op, "count", 0))))
+        sheets[at] = _shift_rows(sheets[at], _position(op, "at", 0), max(0, _position(op, "count", 0)))
     elif case == "delete_rows":
-        sheets[at] = _shift_rows(sheets[at], php_int_cast(get(op, "at", 0)), -max(0, php_int_cast(get(op, "count", 0))))
+        sheets[at] = _shift_rows(sheets[at], _position(op, "at", 0), -max(0, _position(op, "count", 0)))
     elif case == "insert_columns":
-        sheets[at] = _shift_columns(sheets[at], php_int_cast(get(op, "at", 0)), max(0, php_int_cast(get(op, "count", 0))))
+        sheets[at] = _shift_columns(sheets[at], _position(op, "at", 0), max(0, _position(op, "count", 0)))
     elif case == "delete_columns":
-        sheets[at] = _shift_columns(sheets[at], php_int_cast(get(op, "at", 0)), -max(0, php_int_cast(get(op, "count", 0))))
+        sheets[at] = _shift_columns(sheets[at], _position(op, "at", 0), -max(0, _position(op, "count", 0)))
     else:
         return schema
 
@@ -197,19 +211,10 @@ def _strict(value: Any, expected: str) -> bool:
     return isinstance(value, str) and value == expected
 
 
-def _switch(op_type: Any) -> str | None:
-    """The case PHP's loose `switch ($type)` lands on.
-
-    Under PHP 8's `==`, a non-numeric string case equals only the same string
-    or `true` (a non-empty string is truthy). Numbers, null, false and arrays
-    match none. So `"type": true` is `remove_sheet`, the first case.
-    """
-    # `is True`, not `== True`: in Python `1 == True`, and PHP's `1 == 'remove_sheet'` is false.
-    if op_type is True:
-        return _SWITCH_CASES[0]
-    if isinstance(op_type, str) and op_type in _SWITCH_CASES:
-        return op_type
-    return None
+def _position(op: Any, key: str, default: int) -> int:
+    """`self::integer($op[$key] ?? $default) ?? $default`, for a field the guard has checked."""
+    integer = php_integer(get(op, key, default))
+    return default if integer is None else integer
 
 
 def _find(sheets: list[Any], name: str) -> int | None:
@@ -250,10 +255,10 @@ def _set_cell(sheet: Any, op: Any) -> Any:
     - An op without `value` writes a cell without `value`, and a cell left with
       no keys at all is removed.
 
-    The address is upper-cased but NOT trimmed before it is used as the key,
-    as in PHP (`" a1"` parses, and is stored as `" A1"`).
+    The address is trimmed (PHP `trim()`'s set) and upper-cased before it is
+    validated and used as the key, as in PHP 2.3.2: `" a1 "` is A1.
     """
-    address = ascii_upper(php_string_cast(get(op, "address", "")))
+    address = ascii_upper(php_trim(php_string_cast(get(op, "address", ""))))
 
     if parse_address(address) is None:
         return sheet
@@ -321,7 +326,7 @@ def _set_range(sheet: Any, op: Any) -> Any:
 
 
 def _clear_cell(sheet: Any, op: Any) -> Any:
-    """`unset($sheet['cells'][strtoupper((string) $op['address'])])`.
+    """`unset($sheet['cells'][strtoupper(trim((string) $op['address']))])`.
 
     No address validation, as in PHP. PHP's `unset` does not create a missing
     `cells`, is silent on a null one, and throws on a scalar one; so does this.
@@ -330,7 +335,7 @@ def _clear_cell(sheet: Any, op: Any) -> Any:
         return sheet
 
     cells = sheet["cells"]
-    key = php_key(ascii_upper(php_string_cast(get(op, "address", ""))))
+    key = php_key(ascii_upper(php_trim(php_string_cast(get(op, "address", "")))))
 
     if cells is None:
         return sheet
@@ -389,6 +394,10 @@ def _shift_columns(sheet: Any, at: int, delta: int) -> Any:
     if is_array(raw_widths):
         widths: dict[int, Any] = {}
         for index, width in php_pairs(raw_widths):
+            # A key that is not a column index is dropped (PHP 2.3.2), not read as
+            # column 0: `(int) "abc"` would overwrite column A's width.
+            if not is_index_key(index):
+                continue
             column = php_int_cast(index)
             number = column + 1
             if number < at:

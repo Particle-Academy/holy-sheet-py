@@ -18,6 +18,12 @@ declare(strict_types=1);
  *   {"fn": "equivalent", "a": {...}, "b": {...}}    -> {"equivalent": bool}
  *   {"fn": "opSchema"}                              -> {"schema": {...}}
  *   {"fn": "hunks", "a": [...], "b": [...]}         -> {"hunks": [...]}
+ *   {"fn": "nested", "leaf": x, "depth": n, "map": bool}
+ *                                                   -> {"same": SheetDiff::same(v, v)}
+ *
+ * "nested" wraps `leaf` in `depth` arrays (lists, or maps under "k") HERE, so
+ * where json_encode's depth runs out is pinned without sending that nesting
+ * through JSON in either direction.
  *
  * One process for the whole batch, because each PHP start costs more than the
  * call. A call that throws reports `{"error": class, "message": ...}` instead
@@ -50,6 +56,17 @@ if (! class_exists(\HolySheet\Ops\SheetDiff::class)) {
     exit(3);
 }
 
+/** @param array{leaf: mixed, depth: int, map: bool} $call */
+function nested(array $call): mixed
+{
+    $value = $call['leaf'];
+    for ($i = 0; $i < $call['depth']; $i++) {
+        $value = $call['map'] ? ['k' => $value] : [$value];
+    }
+
+    return $value;
+}
+
 $calls = json_decode((string) file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
 $results = [];
 
@@ -61,6 +78,7 @@ foreach ($calls as $call) {
             'equivalent' => ['equivalent' => \HolySheet\Agent::equivalent($call['a'], $call['b'])],
             'opSchema' => ['schema' => \HolySheet\Agent::opSchema()],
             'hunks' => ['hunks' => \HolySheet\Ops\SheetDiff::hunks($call['a'], $call['b'])],
+            'nested' => ['same' => \HolySheet\Ops\SheetDiff::same(nested($call), nested($call))],
         };
     } catch (\Throwable $e) {
         $results[] = ['error' => get_class($e), 'message' => $e->getMessage()];

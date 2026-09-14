@@ -12,6 +12,23 @@ what moved.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-15
+
+### Fixed
+
+Six defects in the op code, mirroring `particle-academy/holy-sheet` 2.3.3, which is the reference. 0.3.0 reproduced PHP 2.3.1's behaviour exactly, and five of these were PHP defects this port found and reported (fixed in PHP 2.3.2); the sixth was fixed in PHP 2.3.3. Each has a test ported from PHP's `SheetOpsTest.php`, and each fails against 0.3.0.
+
+- **`op_schema()` rejected most `set_column_widths` ops `diff()` emits.** PHP encodes widths keyed 0..n-1 as a JSON list (`[120, 80, 140]`), and 0.3.0 allowed only an empty list. `columnWidths` is now an object or an array of non-negative numbers, a list indexed by position; the schema matches PHP 2.3.3's key for key, description included.
+- **An op with a non-string `type` could remove a sheet.** 0.3.0 mirrored PHP's loose `switch`, so `type: True` matched `remove_sheet`. A `type` that is not a string naming an op type now skips the op.
+- **A padded address wrote a key of its own.** `set_cell` stored `" a1 "` under `" A1 "`, and `clear_cell` could not reach A1 with it. Both now trim with PHP's `trim()` set (space, tab, LF, CR, NUL, vertical tab; not NBSP) before upper-casing.
+- **A column-width key that is not a column index was read as column A** by `insert_columns` and `delete_columns` (`(int) "abc"` is 0), and could overwrite column A's width. It is dropped. An int key and a string of ASCII digits (`"007"`) are still indexes.
+- **Two values JSON cannot hold compared as the same.** `SheetDiff.same()` encoded both to `""`, so a cell going from NaN to infinity, or between two strings holding different lone surrogates (invalid UTF-8 in PHP), recorded no change. It now raises `ValueError`, as PHP throws `JsonException`, for NaN, an infinity, an int too large for a float, a lone surrogate in a string or a key, and more than 4096 nested arrays (PHP's depth, where every array counts, an empty one included). `diff()` raises with it. The comparison walks an explicit stack instead of recursing, so the depth limit is PHP's rather than Python's recursion limit. `reduce()` is not changed and still deep-copies its result with `copy.deepcopy`, which raises `RecursionError` for a value nested past about 490 levels, where PHP has no limit.
+- **An op with a position or count that is not a number moved or unfroze things.** `add_sheet.index`, `move_sheet.toIndex`, `set_frozen.rows`/`cols` and the row and column ops' `at`/`count` were read with PHP's `(int)` cast, so `toIndex: "last"` moved a sheet to the front, `index: "end"` inserted one there, and `rows: "one"` unfroze the panes. A present value that is not an int or a string of ASCII digits (`None`, `True`, `2.0` and `"1e3"` included) now skips the op; absent keys keep their defaults (`add_sheet` appends, `move_sheet` stays, `set_frozen` uses 0). As in PHP, the check covers every op that reaches a sheet, so a junk `count` on a `set_cell` skips it too. `SheetReducer.integer()` is PHP's helper for the rule.
+
+`tests/test_sheet_ops_parity_php.py` gains PHP-checked reducer cases for each fix, diff cases for a list of widths and a padded cell key, and `SheetDiff.same` at 4095 to 4097 levels, which `scripts/php_ops.php` builds in PHP (a new `nested` call) so the nesting never crosses JSON.
+
+**What you must do:** nothing, unless you relied on one of the above. `diff()` output changes only for a schema holding a padded cell key, where it matches PHP 2.3.3's, and `diff()` now raises on a value JSON cannot hold, which parsed JSON never contains.
+
 ## [0.3.0] - 2026-09-15
 
 ### Added

@@ -16,11 +16,13 @@ and every one of them is reproduced here rather than approximated:
 * **`===` is typed.** `1 === 1.0` and `true === 1` are false. Python's `==`
   says both are true, because `bool` subclasses `int`. :func:`identical` checks
   bool before int, every time.
-* **`json_encode` fails on NaN, INF, invalid UTF-8 and nesting past 512**, and
-  `SheetDiff::canon()` casts that `false` to `""`. So in PHP any two values that
-  cannot be encoded compare as the same. :func:`canon` returns `""` for the same
-  inputs (a lone surrogate standing in for invalid UTF-8). That is a questionable
-  PHP behaviour, mirrored on purpose: it is listed in the 0.3.0 port notes.
+* **`json_encode` fails on NaN, INF, invalid UTF-8 and nesting past its depth**,
+  and since holy-sheet 2.3.2 `SheetDiff::canon()` throws `JsonException` there
+  (2.3.1 cast the `false` to `""`, so any two such values compared as the same).
+  :func:`canon` raises `ValueError` for the same inputs, a lone surrogate
+  standing in for invalid UTF-8, at the same depth: 4096 arrays, an empty one
+  counting as a level. It walks an explicit stack, because Python's default
+  recursion limit (1000) would otherwise decide instead of PHP's depth.
 
 Where PHP's integers overflow into floats (row numbers or shift counts past
 2**63), this port does not follow: Python's integers do not overflow, and no
@@ -37,8 +39,12 @@ from typing import Any
 from ..helpers.php import PHP_INT_MAX, PHP_INT_MIN, php_float_to_string
 from ..workbook.cell_address import CellAddress
 
-#: `json_encode`'s default depth.
-_JSON_MAX_DEPTH = 512
+#: The depth `SheetDiff::canon()` passes `json_encode` (PHP 2.3.2).
+_JSON_MAX_DEPTH = 4096
+
+# `ctype_digit` in PHP's C locale: one or more ASCII digits. Not `str.isdigit()`,
+# which accepts every Unicode digit.
+_DIGITS = re.compile(r"[0-9]+", re.ASCII)
 
 # A string PHP turns into an integer array key: canonical decimal, no "+", no
 # leading zero, no "-0". Range-checked separately.
@@ -219,6 +225,35 @@ def php_string_cast(value: Any) -> str:
     raise TypeError(f"[holy-sheet] cannot cast {type(value).__name__} to string")
 
 
+def php_integer(value: Any) -> int | None:
+    """PHP 2.3.3 `SheetReducer::integer()`: an int, or a string of digits; else None.
+
+    `True` is not an int (`is_int(true)` is false), nor is `2.0`, nor an integer
+    outside PHP's range, which `json_decode` would have made a float. A digit
+    string past the range saturates, as `(int)` does.
+    """
+    if isinstance(value, bool):  # before int, always
+        return None
+    if isinstance(value, int):
+        return value if PHP_INT_MIN <= value <= PHP_INT_MAX else None
+    if isinstance(value, str) and _DIGITS.fullmatch(value):
+        return php_int_cast(value)
+    return None
+
+
+def is_index_key(key: Any) -> bool:
+    """Whether a PHP array key (as :func:`php_key` stores it) reads as a column
+    index: an int key, or a string of digits (`ctype_digit`)."""
+    if isinstance(key, bool):
+        return False
+    return isinstance(key, int) or (isinstance(key, str) and _DIGITS.fullmatch(key) is not None)
+
+
+def php_trim(value: str) -> str:
+    """PHP `trim()` with its default set: space, tab, LF, CR, NUL, vertical tab."""
+    return value.strip(_PHP_TRIM)
+
+
 def ascii_upper(value: str) -> str:
     """PHP 8.2+ `strtoupper`: ASCII only. `"ß".upper()` is `"SS"`; PHP leaves it."""
     return value.translate(_ASCII_UPPER)
@@ -232,7 +267,7 @@ def parse_address(address: str) -> tuple[int, int] | None:
     accepts `"ﬀ1"` and Arabic-Indic digits where PHP does not. The ops follow
     PHP exactly; the writer's parser is left as it is.
     """
-    match = _A1.fullmatch(ascii_upper(address.strip(_PHP_TRIM)))
+    match = _A1.fullmatch(ascii_upper(php_trim(address)))
     if match is None:
         return None
     return CellAddress.index(match.group(1)), php_int_cast(match.group(2))
@@ -271,10 +306,6 @@ def _php_scalar(value: Any) -> Any:
     return value
 
 
-class _Unencodable(Exception):
-    """`json_encode` would have returned false."""
-
-
 def canon(value: Any) -> str:
     """`SheetDiff::canon()`: JSON with map keys sorted and list order kept.
 
@@ -283,52 +314,87 @@ def canon(value: Any) -> str:
     (Python's `True == 1` never reaches the comparison, because the JSON text
     is compared, and `true` is not `1`), `[]` and `{}` are the same, and
     `{"0": x}` is `[x]`.
+
+    Raises `ValueError` where PHP 2.3.2 throws `JsonException`: NaN or an
+    infinity, an int too large for a float (`json_decode`'s INF), a lone
+    surrogate in a string or a key (invalid UTF-8 in PHP), and more than 4096
+    nested arrays. The walk is a loop over an explicit stack, not recursion, so
+    that limit is PHP's and not Python's recursion limit.
     """
-    try:
-        normalised = _sort_keys(value, 0)
-    except _Unencodable:
-        return ""
-    return json.dumps(normalised, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    if not is_array(value):
+        return _canon_scalar(value)
+
+    stack: list[_Frame] = [_Frame(value, None, 1)]
+
+    while True:
+        frame = stack[-1]
+
+        if frame.position < len(frame.pairs):
+            key, item = frame.pairs[frame.position]
+            frame.position += 1
+            if is_array(item):
+                stack.append(_Frame(item, key, len(stack) + 1))
+            else:
+                frame.parts.append(frame.member(key, _canon_scalar(item)))
+            continue
+
+        stack.pop()
+        text = "[" + ",".join(frame.parts) + "]" if frame.is_list else "{" + ",".join(frame.parts) + "}"
+        if not stack:
+            return text
+        stack[-1].parts.append(stack[-1].member(frame.key, text))
 
 
-def _sort_keys(value: Any, depth: int) -> Any:
-    if value is None or isinstance(value, bool):  # bool before int, always
-        return value
-    if isinstance(value, int):
-        if PHP_INT_MIN <= value <= PHP_INT_MAX:
-            return value
-        try:
-            return float(value)
-        except OverflowError as error:
-            raise _Unencodable from error
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise _Unencodable
-        return value
-    if isinstance(value, str):
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as error:
-            raise _Unencodable from error
-        return value
-    if is_array(value):
-        if depth + 1 > _JSON_MAX_DEPTH:
-            raise _Unencodable
+class _Frame:
+    """One array of :func:`canon`'s walk: its pairs in output order, and the text so far."""
+
+    __slots__ = ("pairs", "key", "position", "parts", "is_list")
+
+    def __init__(self, value: Any, key: Any, depth: int) -> None:
+        if depth > _JSON_MAX_DEPTH:
+            raise ValueError("[holy-sheet] cannot compare a value JSON cannot hold: Maximum stack depth exceeded")
         pairs = php_pairs(value)
         if not is_php_list(pairs):
             # ksort($value, SORT_STRING). Code-point order is UTF-8 byte order.
             pairs.sort(key=lambda pair: str(pair[0]))
-        # A plain loop, not a comprehension: on Python 3.11 a comprehension is a
-        # frame of its own, so recursing from one costs two frames per level and
-        # the 512 levels json_encode accepts overflow the default recursion limit.
-        children: list[tuple[Any, Any]] = []
-        for key, item in pairs:
-            children.append((key, _sort_keys(item, depth + 1)))
+        self.pairs = pairs
+        self.key = key
+        self.position = 0
+        self.parts: list[str] = []
         # json_encode decides list-or-object AFTER the sort: {"1": b, "0": a} is [a, b].
-        if is_php_list(children):
-            return [item for _, item in children]
-        return {str(key): item for key, item in children}
+        self.is_list = is_php_list(pairs)
+
+    def member(self, key: Any, text: str) -> str:
+        return text if self.is_list else _canon_string(str(key)) + ":" + text
+
+
+def _canon_scalar(value: Any) -> str:
+    if value is None or isinstance(value, bool):  # bool before int, always
+        return json.dumps(value)
+    if isinstance(value, int):
+        if PHP_INT_MIN <= value <= PHP_INT_MAX:
+            return json.dumps(value)
+        try:
+            value = float(value)
+        except OverflowError as error:
+            raise ValueError("[holy-sheet] cannot compare a value JSON cannot hold: Inf and NaN cannot be JSON encoded") from error
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("[holy-sheet] cannot compare a value JSON cannot hold: Inf and NaN cannot be JSON encoded")
+        return json.dumps(value)
+    if isinstance(value, str):
+        return _canon_string(value)
     raise TypeError(f"[holy-sheet] {type(value).__name__} is not a schema value")
+
+
+def _canon_string(value: str) -> str:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError(
+            "[holy-sheet] cannot compare a value JSON cannot hold: Malformed UTF-8 characters, possibly incorrectly encoded"
+        ) from error
+    return json.dumps(value, ensure_ascii=False)
 
 
 def php_json_view(value: Any) -> Any:

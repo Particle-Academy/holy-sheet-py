@@ -1,6 +1,6 @@
 """The op list that turns one Holy Sheet schema into another.
 
-Mirrors PHP `Ops\\SheetDiff` (holy-sheet 2.3.0), which is normative. The same
+Mirrors PHP `Ops\\SheetDiff` (holy-sheet 2.3.3), which is normative. The same
 inputs give the same ops, in the same order, in both runtimes;
 `tests/test_sheet_ops_parity_php.py` runs PHP as a subprocess and compares.
 
@@ -102,7 +102,12 @@ class SheetDiff:
 
     @staticmethod
     def same(a: Any, b: Any) -> bool:
-        """Structural equality with map key order ignored and list order kept."""
+        """Structural equality with map key order ignored and list order kept.
+
+        Raises `ValueError` on a value JSON cannot hold (NaN, an infinity, a lone
+        surrogate, more than 4096 nested arrays), as PHP 2.3.2 throws
+        `JsonException`, rather than calling two of them the same.
+        """
         return canon(a) == canon(b)
 
     @staticmethod

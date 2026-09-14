@@ -1,7 +1,7 @@
 """JSON Schema for one sheet op -- validate ops on the wire, or register the op
 vocabulary as an LLM tool.
 
-Mirrors PHP `Ops\\SheetOpSchema` (holy-sheet 2.3.1) key for key and in the same
+Mirrors PHP `Ops\\SheetOpSchema` (holy-sheet 2.3.3) key for key and in the same
 key order; the parity suite compares the two documents.
 
 `set_cell`, `set_range` and `set_workbook` are fancy-sheets' `SheetOp`
@@ -69,14 +69,22 @@ class SheetOpSchema:
                 ["sheet", "mergedRegions"],
                 "Set every merged region of a sheet.",
             ),
-            # An EMPTY array too (PHP 2.3.1): PHP encodes an empty map as `[]`, and
-            # a diff that removes every width emits exactly that -- so does this
-            # port. The Node port emits `{}`. Both mean no widths.
+            # A LIST too (PHP 2.3.2, found by this port). PHP encodes a map whose
+            # keys run 0..n-1 as a JSON list, so widths for columns A, B and C
+            # arrive as `[120, 80, 140]` and no widths as `[]`; 2.3.1 allowed only
+            # the empty list. A list's position is the column index.
             _variant(
                 "set_column_widths",
-                {"sheet": sheet(), "columnWidths": {"type": ["object", "array"], "maxItems": 0}},
+                {
+                    "sheet": sheet(),
+                    "columnWidths": {
+                        "type": ["object", "array"],
+                        "items": {"type": "number", "minimum": 0},
+                        "additionalProperties": {"type": "number", "minimum": 0},
+                    },
+                },
                 ["sheet", "columnWidths"],
-                "Set every column width of a sheet (0-based column index to pixels); empty removes them.",
+                "Set every column width of a sheet (0-based column index to pixels; a list is indexed by position); empty removes them.",
             ),
             _variant("set_frozen", {"sheet": sheet(), "rows": {"type": "integer", "minimum": 0}, "cols": {"type": "integer", "minimum": 0}}, ["sheet", "rows", "cols"], "Set frozen rows and columns."),
             _variant("set_meta", {"meta": nullable_object()}, ["meta"], "Replace the workbook meta, or remove it with null."),

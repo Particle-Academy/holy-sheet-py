@@ -224,7 +224,7 @@ def diff(a: Any, b: Any) -> list[dict[str, Any]]:
     schemas must be valid: the "same workbook" check writes them, and raises
     `SchemaException` otherwise.
 
-    The PHP reference (`Agent::diff`, holy-sheet 2.3.0) returns the same ops in
+    The PHP reference (`Agent::diff`, holy-sheet 2.3.3) returns the same ops in
     the same order for the same input.
     """
     return SheetDiff.diff(a, b)

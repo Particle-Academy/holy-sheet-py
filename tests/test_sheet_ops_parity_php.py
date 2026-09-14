@@ -1,7 +1,7 @@
 """Cross-runtime OPS parity: `diff`, `reduce`, `equivalent`, `op_schema` and
 `SheetDiff.hunks` give PHP's answer, call for call.
 
-PHP holy-sheet 2.3.1 is the reference (2.3.0's ops, 2.3.1's op schema). Every
+PHP holy-sheet 2.3.3 is the reference. Every
 case is sent to PHP in ONE batch through `scripts/php_ops.php`, and each result
 is compared with this port's as the JSON PHP would print for it
 (`php_json_view`): op order, op key order, int versus float, and PHP's
@@ -123,6 +123,19 @@ def _special_diffs() -> dict[str, tuple[Any, Any]]:
     del shifted["sheets"][0]["cells"]["C5"]
     cases["two rows inserted into a wide sheet"] = (wide, shifted)
 
+    # PHP 2.3.2: widths keyed 0..n-1 (a JSON list), and a padded cell key
+    # clear_cell cannot reach now that it trims. (A DIFF over a width key that is
+    # not an index is not here: diff() writes both schemas, and this package's
+    # Normalizer raises on `int("abc")` where PHP's casts it to column 0. The
+    # reducer cases below cover the op itself.)
+    b = workbook()
+    b["sheets"][0]["columnWidths"] = {0: 120, 1: 80, 2: 140}
+    cases["widths keyed 0..n-1"] = (workbook(), b)
+    cases["a padded cell key"] = (
+        {"sheets": [{"name": "S", "cells": {" A1 ": {"value": 1}, "B2": {"value": 5}}}, {"name": "T", "cells": {"A1": {"value": 1}}}]},
+        {"sheets": [{"name": "S", "cells": {"B2": {"value": 5}}}, {"name": "T", "cells": {"A1": {"value": 2}}}]},
+    )
+
     authored = {"sheets": [{
         "name": "Deals",
         "columns": [{"header": "Name"}, {"header": "Value", "type": "currency"}],
@@ -197,13 +210,35 @@ def _random_ops(rng: random.Random, schema: dict[str, Any], run: int) -> tuple[d
 
 #: Reducer inputs where PHP's semantics are easy to miss. Each is (schema, ops).
 QUIRKS: dict[str, tuple[Any, Any]] = {
-    "type true is remove_sheet": ({"sheets": [{"name": "A", "cells": {}}, {"name": "B"}]}, {"type": True, "sheet": "B"}),
+    # PHP 2.3.2: a type is a string naming an op type, or the op is skipped.
+    "type true is skipped": ({"sheets": [{"name": "A", "cells": {}}, {"name": "B"}]}, {"type": True, "sheet": "B"}),
     "type 1 matches nothing": ({"sheets": [{"name": "A", "cells": {}}, {"name": "B"}]}, {"type": 1, "sheet": "B"}),
+    "other types that are not op types": (
+        {"sheets": [{"name": "A", "cells": {}}, {"name": "B"}]},
+        [{"type": None, "sheet": "B"}, {"type": ["remove_sheet"], "sheet": "B"}, {"type": "REMOVE_SHEET", "sheet": "B"}, {"type": {"x": 1}, "sheet": "A"}],
+    ),
+    # PHP 2.3.2: addresses are trimmed with trim()'s set, which excludes NBSP.
     "a padded address": ({"sheets": [{"name": "A", "cells": {}}]}, {"type": "set_cell", "sheet": "A", "address": " a1 ", "value": 1}),
-    "cast column width keys": (
+    "padded addresses": (
+        workbook(),
+        [
+            {"type": "set_cell", "sheet": "Q3", "address": "\t b3 \n", "value": 1},
+            {"type": "clear_cell", "sheet": "Q3", "address": "\x00a2\x0b"},
+            {"type": "set_cell", "sheet": "Q3", "address": "\u00a0c2", "value": 3},
+            {"type": "clear_cell", "sheet": "Q3", "address": "\u00a0A4"},
+            {"type": "set_range", "sheet": "Q3", "start": " d1 ", "values": [[4]]},
+        ],
+    ),
+    # PHP 2.3.2: a column-width key that is not an index is dropped.
+    "column width keys that are not indexes": (
         {"sheets": [{"name": "S", "columnWidths": {"abc": 5, "3": 7, "1.5": 9}, "cells": {"B2": {"value": 1}}}]},
         {"type": "insert_columns", "sheet": "S", "at": 1, "count": 1},
     ),
+    "odd column width keys": (
+        {"sheets": [{"name": "S", "cells": {}, "columnWidths": {"0": 10, "abc": 999, "1": 20, "007": 70, "-1": 5, "-0": 6, "": 7, " 2": 8, "٣": 9}}]},
+        [{"type": "insert_columns", "sheet": "S", "at": 1, "count": 1}, {"type": "delete_columns", "sheet": "S", "at": 2, "count": 1}],
+    ),
+    # PHP 2.3.3: a present position or count that is not an int or digit string skips the op.
     "string and float positions": (
         workbook(),
         [
@@ -211,6 +246,41 @@ QUIRKS: dict[str, tuple[Any, Any]] = {
             {"type": "move_sheet", "sheet": "Notes", "toIndex": "0"},
             {"type": "set_frozen", "sheet": "Q3", "rows": "3x", "cols": 1.5},
             {"type": "add_sheet", "index": "1e0", "sheet": {"name": "Mid"}},
+        ],
+    ),
+    "positions that are not numbers": (
+        workbook(),
+        [
+            {"type": "move_sheet", "sheet": "Notes", "toIndex": "last"},
+            {"type": "add_sheet", "index": "end", "sheet": {"name": "X", "cells": []}},
+            {"type": "add_sheet", "index": None, "sheet": {"name": "Y", "cells": []}},
+            {"type": "add_sheet", "index": True, "sheet": {"name": "Z", "cells": []}},
+            {"type": "set_frozen", "sheet": "Q3", "rows": "one", "cols": 0},
+            {"type": "set_frozen", "sheet": "Q3", "rows": " 1", "cols": 0},
+            {"type": "set_frozen", "sheet": "Q3", "rows": 0, "cols": None},
+            {"type": "insert_rows", "sheet": "Q3", "at": 2, "count": "2x"},
+            {"type": "insert_rows", "sheet": "Q3", "at": "", "count": 1},
+            {"type": "delete_columns", "sheet": "Q3", "at": 1.0, "count": 1},
+            {"type": "delete_rows", "sheet": "Q3", "at": "-1", "count": 1},
+            {"type": "set_cell", "sheet": "Q3", "address": "A1", "value": "skipped", "count": "x"},
+            {"type": "remove_sheet", "sheet": "Notes", "at": None},
+            {"type": "rename_sheet", "sheet": "Notes", "name": "N", "toIndex": [0]},
+        ],
+    ),
+    "positions that are ints, digit strings or absent": (
+        workbook(),
+        [
+            {"type": "move_sheet", "sheet": "Notes", "toIndex": "0"},
+            {"type": "add_sheet", "sheet": {"name": "X", "cells": []}},
+            {"type": "add_sheet", "index": "01", "sheet": {"name": "Y", "cells": []}},
+            {"type": "add_sheet", "index": -3, "sheet": {"name": "Z", "cells": []}},
+            {"type": "insert_rows", "sheet": "Q3", "at": "2", "count": "007"},
+            {"type": "set_frozen", "sheet": "Q3", "cols": "2"},
+            {"type": "move_sheet", "sheet": "X"},
+            {"type": "move_sheet", "sheet": "Y", "toIndex": 99},
+            {"type": "delete_rows", "sheet": "Q3", "at": 3},
+            {"type": "delete_columns", "sheet": "Q3", "at": "1", "count": 1},
+            {"type": "set_frozen", "sheet": "Q3", "rows": "99999999999999999999", "cols": 0},
         ],
     ),
     "set_cell parts": (
@@ -332,6 +402,17 @@ def _build_cases() -> list[tuple[str, dict[str, Any], Callable[[], Any]]]:
 
     cases.append(("opSchema", {"fn": "opSchema"}, lambda: {"schema": holy_sheet.op_schema()}))
 
+    # Where json_encode's depth runs out in SheetDiff::same (PHP 2.3.2). PHP builds
+    # the nesting itself, so none of it crosses JSON, whose encoders here recurse.
+    for leaf in (1, [], "x"):
+        for as_map in (False, True):
+            for depth in (4095, 4096, 4097):
+                cases.append((
+                    f"nested: {json.dumps(leaf)} in {depth} {'maps' if as_map else 'lists'}",
+                    {"fn": "nested", "leaf": leaf, "depth": depth, "map": as_map},
+                    lambda leaf=leaf, depth=depth, as_map=as_map: {"same": SheetDiff.same(_nest(leaf, depth, as_map), _nest(leaf, depth, as_map))},
+                ))
+
     hunk_rng = random.Random(7)
     for k in range(40):
         a = [hunk_rng.choice("abcd") for _ in range(hunk_rng.randint(0, 12))]
@@ -339,6 +420,13 @@ def _build_cases() -> list[tuple[str, dict[str, Any], Callable[[], Any]]]:
         cases.append((f"hunks {k}", {"fn": "hunks", "a": a, "b": b}, lambda a=a, b=b: {"hunks": SheetDiff.hunks(a, b)}))
 
     return cases
+
+
+def _nest(leaf: Any, depth: int, as_map: bool) -> Any:
+    value = copy.deepcopy(leaf)
+    for _ in range(depth):
+        value = {"k": value} if as_map else [value]
+    return value
 
 
 def _both_inputs(from_json: Callable[[], Any], native: Callable[[], Any]) -> Any:
@@ -374,7 +462,7 @@ def php_results(php_oracle) -> list[dict[str, Any]]:
 
 
 def test_the_batch_covers_every_call_shape() -> None:
-    assert {call["fn"] for _, call, _ in CASES} == {"diff", "reduce", "equivalent", "opSchema", "hunks"}
+    assert {call["fn"] for _, call, _ in CASES} == {"diff", "reduce", "equivalent", "opSchema", "hunks", "nested"}
     assert len({case_id for case_id, _, _ in CASES}) == len(CASES)
     assert len(CASES) > 200
 
@@ -401,8 +489,18 @@ def test_random_runs_actually_change_something(php_results: list[dict[str, Any]]
     assert {"set_cell", "clear_cell", "insert_rows", "delete_rows", "rename_sheet", "add_sheet", "move_sheet"} <= kinds
 
 
+def test_the_nested_cases_straddle_json_encodes_depth(php_results: list[dict[str, Any]]) -> None:
+    """Both runtimes throwing everywhere, or nowhere, would pass parity too."""
+    outcomes = {
+        f"{json.dumps(call['leaf'])} {call['depth']}": "throws" if "error" in php_results[i] else "ok"
+        for i, (_, call, _) in enumerate(CASES)
+        if call["fn"] == "nested"
+    }
+    assert (outcomes["1 4096"], outcomes["1 4097"], outcomes["[] 4095"], outcomes["[] 4096"]) == ("ok", "throws", "ok", "throws")
+
+
 #: The PHP release this port's ops and op schema match.
-PHP_REFERENCE = (2, 3, 1)
+PHP_REFERENCE = (2, 3, 3)
 
 
 def test_the_oracle_is_the_reference_release_or_later() -> None:
