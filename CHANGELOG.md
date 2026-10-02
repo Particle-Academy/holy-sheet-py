@@ -12,6 +12,51 @@ what moved.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+
+### Fixed
+
+- **A column's own `width` is honoured. It was documented and silently ignored.**
+
+  The shared `skills/holy-sheet.schema.json` -- the tool definition handed to an
+  LLM, byte-identical across all three ports under a checksum test -- describes
+  `columns[].width` as *"Column width in pixels. Same as columnWidths but
+  per-column."* Only the sheet-level `columnWidths` map was ever read, so a width
+  written the way the schema documents it emitted **no `<cols>` element at all**:
+  no exception, no validation error, nothing from `validate_and_repair`. Silent at
+  every layer.
+
+  Reported against PHP as **holy-sheet#8** by the MOIC team, whose owner's
+  complaint was "can't style spreadsheets at all". Measured, that was mostly this:
+  the theme, header fill, banded rows and currency formats all landed, but a real
+  account name truncated and a correctly-formatted currency rendered as `#####` --
+  which is what a reader actually sees. Fixed in PHP 2.4.0, then Node 2.5.0; PHP is
+  normative and this follows it exactly.
+
+  **This port was the worst of the three.** `_normalize_column_widths` was called
+  from **two** places -- the `cells` path and the `columns`/`rows` path -- so a fix
+  applied to one would have left the other behaving differently. Both now call one
+  `_normalize_widths(sheet)`, which is the shape that cannot drift, and a test
+  covers the `cells` path specifically for that reason.
+
+  **Precedence, identical to PHP and Node: the sheet-level `columnWidths` map is
+  applied LAST and wins.** It is the mechanism that already worked, so a consumer
+  who moved to it to route around this bug must not then find a leftover `width`
+  overriding them. The two sources merge rather than replace, and the result is
+  sorted ascending -- `<col>` children are expected in column order, and merging
+  two sources means insertion order (which IS observable here) is no longer column
+  order.
+
+  A `width` now goes through the same `column_widths` rule the map already obeyed,
+  so `"abc"` and `-5` are rejected rather than written, and **`validate()` reports
+  it at `sheets[0].columns[0].width`**. That half matters as much as the fix: the
+  original defect's cost was that an agent composes against the schema doc, gets
+  no error, and never learns the field was dropped.
+
+  **What you must do: nothing, and do not migrate off `columnWidths`.** Output
+  bytes change for anyone who already set `width`, which is why this is a minor.
+
+
 ## [0.3.2] - 2026-09-14
 
 ### Fixed

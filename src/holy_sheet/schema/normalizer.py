@@ -46,7 +46,7 @@ class Normalizer:
                 name=name,
                 cells=self._normalize_cell_map(sheet["cells"]),
                 merged_regions=self._normalize_merges(sheet.get("mergedRegions") or []),
-                column_widths=self._normalize_column_widths(sheet.get("columnWidths") or {}),
+                column_widths=self._normalize_widths(sheet),
                 frozen_rows=int(sheet.get("frozenRows") or 0),
                 frozen_cols=int(sheet.get("frozenCols") or 0),
             )
@@ -124,7 +124,7 @@ class Normalizer:
             name=name,
             cells=cells,
             merged_regions=self._normalize_merges(sheet.get("mergedRegions") or []),
-            column_widths=self._normalize_column_widths(sheet.get("columnWidths") or {}),
+            column_widths=self._normalize_widths(sheet),
             frozen_rows=int(sheet.get("frozenRows") or 0),
             frozen_cols=int(sheet.get("frozenCols") or 0),
         )
@@ -170,6 +170,44 @@ class Normalizer:
             if isinstance(merge, dict) and merge.get("start") is not None and merge.get("end") is not None:
                 out.append(MergedRegion(str(merge["start"]), str(merge["end"])))
         return out
+
+    def _normalize_widths(self, sheet: dict[str, Any]) -> dict[int, float]:
+        """The two ways a width can be stated, folded into one map.
+
+        ``columns[].width`` widens the column at that POSITION; the sheet-level
+        ``columnWidths`` map keys the same columns by 0-based index. Both have
+        been described in the shared ``skills/holy-sheet.schema.json`` ("Same as
+        columnWidths but per-column") for as long as the field has existed, and
+        only the map was ever read -- so a width written the way the schema
+        documents it emitted no ``<cols>`` element at all, with no error and no
+        repair note (holy-sheet#8; PHP 2.4.0 and Node 2.5.0 fixed it first, and
+        PHP is normative here).
+
+        The MAP IS APPLIED LAST and wins, matching PHP. It is the mechanism that
+        already worked, so a consumer who reached for it to work around this bug
+        must not now find a leftover ``width`` quietly overriding it.
+
+        Sorted ascending on the way out: ``<col>`` children are expected in
+        column order, and merging two sources means insertion order -- which IS
+        observable here -- is no longer column order.
+        """
+        out: dict[int, float] = {}
+
+        for col_idx, column_def in enumerate(sheet.get("columns") or []):
+            # A string column (``columns: ["Account"]``) is a documented
+            # shorthand and carries no width; ``.get`` on a str would raise.
+            if not isinstance(column_def, dict) or "width" not in column_def:
+                continue
+            index = column_widths.index(col_idx)
+            width = column_widths.width(column_def["width"])
+            if index is None or width is None:
+                continue
+            out[index] = width
+
+        for index, width in self._normalize_column_widths(sheet.get("columnWidths") or {}).items():
+            out[index] = width
+
+        return {index: out[index] for index in sorted(out)}
 
     def _normalize_column_widths(self, widths: Any) -> dict[int, float]:
         # JSON object keys arrive as strings ({"0": 120}); PHP's json_decode
