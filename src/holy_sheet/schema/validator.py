@@ -176,6 +176,37 @@ class Validator:
                                 "Each row is an array of cell values, in column order.",
                             )
                         )
+                        continue
+
+                    # A LIST as a cell value is the holy-sheet#9 shape: a row
+                    # nested one level too deep. Caught HERE and not left to the
+                    # writer, because `validate()` returning no errors for a
+                    # schema `normalize()` throws on tells a caller the input is
+                    # fine and moves the failure to where it is hardest to
+                    # attribute. An agent that validates before writing -- the
+                    # whole point of `validate()` -- was being told to go ahead.
+                    #
+                    # The test is `is_list` (PHP's `array_is_list`, so a tuple
+                    # counts), NOT `is_array`: a DICT cell is the
+                    # {"value": ..., "format": {...}} form and has always been
+                    # legal. Rejecting any array would trade this bug for a far
+                    # worse one -- every formatted cell in every workbook. There
+                    # is a test holding that line.
+                    for cell_key, cell in entries(row):
+                        if is_list(cell):
+                            errors.append(
+                                _error(
+                                    f"{path}.rows[{key}][{cell_key}]",
+                                    "a cell value or a cell object",
+                                    "array",
+                                    cell,
+                                    "This cell is a list, which usually means the row is "
+                                    'nested one level too deep: `rows: [[["x"]]]` makes cell '
+                                    'A1 a list, where `rows: [["x"]]` makes it "x". For a '
+                                    'cell with formatting use the object form: '
+                                    '{"value": "x", "format": {...}}.',
+                                )
+                            )
 
         if _has(sheet, "cells"):
             cells = _get(sheet, "cells")

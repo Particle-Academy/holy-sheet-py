@@ -11,11 +11,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from ..exceptions import SchemaException
 from ..helpers.php import (
     entries,
     is_array,
+    is_list,
     is_numeric_string,
     numeric_string_to_number,
+    type_of,
 )
 from ..workbook.cell import Cell
 from ..workbook.cell_address import CellAddress
@@ -44,7 +47,7 @@ class Normalizer:
         if sheet.get("cells") is not None:
             return Sheet(
                 name=name,
-                cells=self._normalize_cell_map(sheet["cells"]),
+                cells=self._normalize_cell_map(sheet["cells"], name),
                 merged_regions=self._normalize_merges(sheet.get("mergedRegions") or []),
                 column_widths=self._normalize_widths(sheet),
                 frozen_rows=int(sheet.get("frozenRows") or 0),
@@ -86,7 +89,7 @@ class Normalizer:
                     merged = column_format.merge_with(row_band) if column_format else row_band
                 else:
                     merged = column_format
-                cells[address] = self._build_cell(address, value, merged)
+                cells[address] = self._build_cell(address, value, merged, name)
 
         totals = sheet.get("totals")
         if totals and is_array(totals) and len(rows) > 0 and len(columns) > 0:
@@ -129,7 +132,7 @@ class Normalizer:
             frozen_cols=int(sheet.get("frozenCols") or 0),
         )
 
-    def _normalize_cell_map(self, cell_map: Any) -> dict[str, Cell]:
+    def _normalize_cell_map(self, cell_map: Any, sheet_name: str | None = None) -> dict[str, Cell]:
         cells: dict[str, Cell] = {}
         for raw_address, cell_data in entries(cell_map):
             address = str(raw_address)
@@ -142,7 +145,9 @@ class Normalizer:
                 bare, formula = self._promote_formula(cell_data)
                 cells[address] = Cell(
                     address=address,
-                    value=None if formula is not None else self._coerce_value(bare, None),
+                    value=None
+                    if formula is not None
+                    else self._coerce_value(bare, None, address, sheet_name),
                     formula=formula,
                 )
                 continue
@@ -156,7 +161,7 @@ class Normalizer:
 
             cells[address] = Cell(
                 address=address,
-                value=self._coerce_value(cell_data.get("value"), fmt),
+                value=self._coerce_value(cell_data.get("value"), fmt, address, sheet_name),
                 formula=cell_data.get("formula"),
                 format=fmt,
                 comment=comment,
@@ -258,7 +263,13 @@ class Normalizer:
             return CellFormat(display_format="datetime")
         return None
 
-    def _build_cell(self, address: str, value: Any, column_format: CellFormat | None) -> Cell:
+    def _build_cell(
+        self,
+        address: str,
+        value: Any,
+        column_format: CellFormat | None,
+        sheet_name: str | None = None,
+    ) -> Cell:
         if isinstance(value, dict):
             cell_format = (
                 CellFormat.from_dict(value["format"])
@@ -269,7 +280,7 @@ class Normalizer:
             comment = _comment_from(value.get("comment"))
             return Cell(
                 address=address,
-                value=self._coerce_value(value.get("value"), merged),
+                value=self._coerce_value(value.get("value"), merged, address, sheet_name),
                 formula=value.get("formula"),
                 format=merged,
                 comment=comment,
@@ -280,7 +291,9 @@ class Normalizer:
 
         return Cell(
             address=address,
-            value=None if formula is not None else self._coerce_value(value, column_format),
+            value=None
+            if formula is not None
+            else self._coerce_value(value, column_format, address, sheet_name),
             formula=formula,
             format=column_format,
         )
@@ -297,7 +310,13 @@ class Normalizer:
             return None, value[1:]
         return value, None
 
-    def _coerce_value(self, value: Any, fmt: CellFormat | None) -> Any:
+    def _coerce_value(
+        self,
+        value: Any,
+        fmt: CellFormat | None,
+        address: str = "?",
+        sheet_name: str | None = None,
+    ) -> Any:
         if value is None:
             return None
 
@@ -316,8 +335,67 @@ class Normalizer:
         if isinstance(value, (datetime, date)):
             return DateConverter.to_serial(value, True)
 
-        if not isinstance(value, (str, int, float, bool)):
+        # PHP's `instanceof Stringable` -- a type that says how it becomes a
+        # string, rather than inheriting `object.__str__` (which falls back to
+        # `__repr__`, a DEBUG representation and never a cell value).
+        #
+        # ONE EXCLUSION, and it is the trap in this guard: `bytes` DOES define
+        # its own `__str__`, and it yields `b'x'`. Measured, not assumed. The
+        # Node port has the identical trap with a different type --
+        # `Array.prototype.toString` is also "its own", and joining is exactly
+        # the corruption that guard exists to stop -- so each port names it in a
+        # test. "Defines its own conversion" is true of a value that must not
+        # pass, in two of the three runtimes.
+        if (
+            not isinstance(value, (bytes, bytearray, memoryview))
+            and type(value).__str__ is not object.__str__
+        ):
             return str(value)
+
+        # REFUSE rather than cast. This used to read "not a scalar, so it must
+        # be safe to stringify", and a LIST reaches it whenever a plain `rows`
+        # form is nested one level too deep -- `rows: [[["x"]]]` instead of
+        # `rows: [["x"]]` -- which needs no object-cell syntax and is exactly
+        # the shape an AI-generated edit produces. In Python a TUPLE does it
+        # too, a shape neither peer runtime can even express.
+        #
+        # This port's corruption was the VISIBLE kind -- `['x']` written into
+        # the cell, which someone opening the sheet files a bug about, where the
+        # Node port wrote `"x"` and looked correct. Both are corrupt and neither
+        # named the cell, which was the actual production complaint in
+        # holy-sheet#9. holy-sheet-py#1.
+        #
+        # The path is the cell's `Sheet!A1` location, not the
+        # `sheets[0].rows[1]` schema path the Validator uses. Deliberate, and
+        # the one place the two conventions differ: this fault is always ONE
+        # CELL, and the A1 location is what an operator can act on.
+        if not isinstance(value, (str, int, float, bool)):
+            where = address if sheet_name is None else f"{sheet_name}!{address}"
+
+            raise SchemaException.from_errors(
+                [
+                    {
+                        "path": where,
+                        "expected": (
+                            "a string, number, bool, null, date, "
+                            "or an object defining __str__"
+                        ),
+                        "got": type_of(value),
+                        "value": value,
+                        "hint": (
+                            "This cell holds a list. The usual cause is a `rows` entry nested "
+                            'one level too deep: `rows: [[["x"]]]` makes cell A1 a list, where '
+                            '`rows: [["x"]]` makes it the string "x". For a cell with '
+                            'formatting use the object form: {"value": "x", "format": {...}}.'
+                        )
+                        if is_list(value)
+                        else (
+                            "Give the cell a scalar or a date, or define __str__ on the type "
+                            "so the conversion is yours rather than implicit."
+                        ),
+                    }
+                ]
+            )
 
         return value
 

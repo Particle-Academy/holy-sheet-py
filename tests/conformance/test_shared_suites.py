@@ -46,9 +46,21 @@ import fancy_conformance as loader
 # a v0.22.1 checkout all the same: shared/decimal 18, nothing failed or skipped,
 # the same count CI printed at 0.22.0.
 #
+# Moved 0.22.1 -> 0.34.0 on 2026-10-11, twelve releases in one step, and the
+# structural failure above is exactly why: nothing prompts a port when the
+# fixture package ships. `dark-slide-py` moved to 0.34.0 on 2026-10-07 as a side
+# effect of other work and its stale-pin issue was closed as fixed -- for that
+# repo. Nobody asked which SIBLING ports carried the same pin, so this one sat
+# twelve versions behind with a red suite, and the red was found only because an
+# unrelated release ran the full suite here.
+#
+# Re-run FIRST, not to get to green: shared/decimal 18 passed, 0 failed, 0
+# skipped -- the identical count recorded at 0.22.0 and 0.22.1 above, so the
+# newer fixtures changed no answer this port gives.
+#
 # CI checks out `ref: v<this>` from .github/workflows/ci.yml. Move the two
 # together; test_ci_checks_out_the_fixture_tag_this_suite_pins fails otherwise.
-PINNED_SUITE_VERSION = "0.22.1"
+PINNED_SUITE_VERSION = "0.34.0"
 
 DISPATCH = {
     "formatFloat": lambda v: format_float(float(v)),

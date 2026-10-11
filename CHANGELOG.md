@@ -12,6 +12,92 @@ what moved.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-11
+
+### Fixed
+
+- **A cell value that cannot be represented is REFUSED and names the cell,
+  instead of being written as its `repr` — `['x']` in the cell.** Mirrors the PHP
+  reference fix in `particle-academy/holy-sheet` 2.5.0 ([holy-sheet#9], reported
+  from MOIC production); tracked here as [#1]. PHP is normative for semantics in
+  this family, so the quirk was fixed there first and this is the mirror.
+
+  `_coerce_value()` ended with "not a scalar, so it must be safe to stringify":
+
+  ```python
+  if not isinstance(value, (str, int, float, bool)):
+      return str(value)   # a LIST reaches this line
+  ```
+
+  A list gets there whenever a plain `rows` form is nested one level too deep —
+  `rows: [[["x"]]]` instead of `rows: [["x"]]`. No object-cell syntax is needed,
+  which is exactly the shape an AI-generated edit produces. **In Python a TUPLE
+  does it too**, a shape neither peer runtime can express.
+
+  Measured through each normalizer rather than through `str()`, because the
+  three corruptions differ and the difference decides which is dangerous:
+
+  | cell | PHP (before) | Node (before) | this port (before) |
+  |---|---|---|---|
+  | `["x"]` | `"Array"` | `"x"` | `"['x']"` |
+  | `["x","y"]` | `"Array"` | `"x,y"` | `"['x', 'y']"` |
+
+  This port's was the **visible** kind — someone opening the sheet sees `['x']`
+  and files a bug, where Node silently wrote exactly what the author meant. Both
+  were corrupt, and neither named the cell, which was the actual production
+  complaint: not that it failed, but that it said nothing about *where*.
+
+  The guard now accepts a type that defines its own `__str__` (PHP's
+  `Stringable`; `__repr__` alone does not count, because a repr is a debug
+  representation and never a cell value) and refuses everything else — with
+  **one exclusion that is the trap in this guard**: `bytes` *does* define its
+  own `__str__`, and it yields `b'x'`. Measured, not assumed. The Node port has
+  the identical trap with a different type, so each port names it in a test.
+
+  The refusal is a `SchemaException` whose structured error names the cell as
+  `Sheet!A1`, with a hint explaining the nesting mistake. That differs from the
+  `sheets[0].rows[1]` schema path used elsewhere, deliberately: this fault is
+  always one cell, and the A1 location is what an operator can act on.
+
+- **`validate()` no longer passes a schema that `normalize()` will throw on.**
+  The same input returned **zero** validation errors, so `validate()` told a
+  caller the workbook was fine and the write then failed — moving the failure to
+  where it is hardest to attribute, in the exact validate-then-write order an
+  agent uses. It now reports `sheets[0].rows[0][0]` for a list cell.
+
+  The check is `is_list` (PHP's `array_is_list`, so a tuple counts), **not**
+  `is_array`: a dict cell is the `{"value": …, "format": {…}}` form and has
+  always been legal. Rejecting any array would have traded this bug for a far
+  worse one — every formatted cell in every workbook. There is a test holding
+  that line.
+
+  **What you must do:** nothing, if your cells were already scalars, dates, or
+  cell dicts. If any schema you build can nest a row one level too deep, you now
+  get a `SchemaException` naming the cell where you previously got a workbook
+  with `['x']` in it — read `get_errors()[0]["path"]` for the address. Released
+  as a MINOR because that raise is observable to a caller whose input the
+  validator previously accepted.
+
+### Changed
+
+- **The `fancy-conformance` fixture pin moves `0.22.1` → `0.34.0`,** twelve
+  releases in one step. The suites were re-run first and not to reach green:
+  `shared/decimal` reports 18 passed, 0 failed, 0 skipped — the identical count
+  recorded at 0.22.0 and 0.22.1 — so the newer fixtures change no answer this
+  port gives. The CI checkout `ref` moved with it; a test fails if the two
+  disagree.
+
+  Worth recording *how* this was found, because the mechanism will repeat:
+  `dark-slide-py` moved to 0.34.0 on 2026-10-07 and its stale-pin issue was
+  closed as fixed — for that repo. Nobody asked which **sibling ports** carried
+  the same pin, so this one sat twelve versions behind with a red suite, and the
+  red surfaced only because an unrelated release ran the full suite here. The
+  pin only moves when a human re-runs the tables, and nothing prompts that when
+  the fixture package ships.
+
+[#1]: https://github.com/Particle-Academy/holy-sheet-py/issues/1
+[holy-sheet#9]: https://github.com/Particle-Academy/holy-sheet/issues/9
+
 ## [0.4.0] - 2026-10-02
 
 ### Fixed
