@@ -23,6 +23,7 @@ from ..helpers.php import (
 )
 from ..workbook.cell import Cell
 from ..workbook.cell_address import CellAddress
+from ..workbook.chart_range import ChartRange
 from ..workbook.cell_comment import CellComment
 from ..workbook.cell_format import CellFormat
 from ..workbook.merged_region import MergedRegion
@@ -46,15 +47,17 @@ class Normalizer:
         name = str(sheet["name"])
 
         if sheet.get("cells") is not None:
+            sparse = self._normalize_cell_map(sheet["cells"], name)
             return Sheet(
                 name=name,
-                cells=self._normalize_cell_map(sheet["cells"], name),
+                cells=sparse,
                 merged_regions=self._normalize_merges(sheet.get("mergedRegions") or []),
                 column_widths=self._normalize_widths(sheet),
                 frozen_rows=int(sheet.get("frozenRows") or 0),
                 frozen_cols=int(sheet.get("frozenCols") or 0),
                 row_heights=normalize_row_heights(sheet.get("rowHeights")),
                 print_setup=normalize_print(sheet.get("print")),
+                charts=normalize_charts(sheet.get("charts"), name, sparse),
             )
 
         cells: dict[str, Cell] = {}
@@ -135,6 +138,7 @@ class Normalizer:
             frozen_cols=int(sheet.get("frozenCols") or 0),
             row_heights=normalize_row_heights(sheet.get("rowHeights")),
             print_setup=normalize_print(sheet.get("print")),
+            charts=normalize_charts(sheet.get("charts"), name, cells),
         )
 
     def _normalize_cell_map(self, cell_map: Any, sheet_name: str | None = None) -> dict[str, Cell]:
@@ -448,6 +452,78 @@ def normalize_print(print_spec: Any) -> dict[str, Any] | None:
     if orientation is None and not fit and footer is None:
         return None
     return {"orientation": orientation, "fitToWidth": fit, "footer": footer}
+
+
+CHART_TYPES = ("column", "bar", "line", "pie")
+"""The chart types the writer draws. Mirrors PHP Normalizer::CHART_TYPES."""
+
+_HEX_COLOR = re.compile(r"^#([0-9A-Fa-f]{6})$")
+
+
+def _key(value: Any, key: str) -> Any:
+    """PHP ``$value[$key] ?? null`` on a value that may not be a map."""
+    return value.get(key) if isinstance(value, dict) else None
+
+
+def normalize_charts(charts: Any, sheet_name: str, cells: dict[str, Cell]) -> list[dict[str, Any]]:
+    """``charts``, normalised. Mirrors PHP Normalizer::normalizeCharts rule for rule."""
+    if not is_array(charts):
+        return []
+    last_col = -1
+    for address in cells:
+        parsed = CellAddress.parse(str(address))
+        if parsed is not None:
+            last_col = max(last_col, parsed[0])
+
+    out: list[dict[str, Any]] = []
+    for _, chart in entries(charts):
+        # `in` on a tuple compares with ==, and True == 1; the type check keeps it strict.
+        chart_type = _key(chart, "type")
+        if not is_array(chart) or not isinstance(chart_type, str) or chart_type not in CHART_TYPES:
+            continue
+        series: list[dict[str, Any]] = []
+        raw_series = _key(chart, "series")
+        for _, s in entries(raw_series) if is_array(raw_series) else []:
+            values = ChartRange.parse(_key(s, "values"), sheet_name) if is_array(s) else None
+            if values is None:
+                continue
+            color = _key(s, "color")
+            match = _HEX_COLOR.match(color) if isinstance(color, str) else None
+            name = _key(s, "name")
+            series.append({
+                "name": name if isinstance(name, str) else None,
+                "values": values,
+                "color": match.group(1).upper() if match else None,
+            })
+        if not series:
+            continue
+
+        stack = len(out)
+        start = [last_col + 2, 1 + 18 * stack]
+        end = [start[0] + 8, start[1] + 16]
+        position = _key(chart, "position")
+        if is_array(position):
+            a = CellAddress.parse(_key(position, "from")) if isinstance(_key(position, "from"), str) else None
+            b = CellAddress.parse(_key(position, "to")) if isinstance(_key(position, "to"), str) else None
+            if a is not None and b is not None and b[0] > a[0] and b[1] > a[1]:
+                start = [a[0], a[1] - 1]
+                end = [b[0], b[1] - 1]
+
+        title = _key(chart, "title")
+        fmt = _key(chart, "format")
+        legend = _key(chart, "legend")
+        out.append({
+            "type": chart_type,
+            "title": title if isinstance(title, str) and title != "" else None,
+            "categories": ChartRange.parse(_key(chart, "categories"), sheet_name),
+            "series": series,
+            "from": start,
+            "to": end,
+            "legend": legend if isinstance(legend, bool) else None,
+            "dataLabels": _key(chart, "dataLabels") is True,
+            "format": fmt if isinstance(fmt, str) and fmt != "" else None,
+        })
+    return out
 
 
 def _comment_from(data: Any) -> CellComment | None:

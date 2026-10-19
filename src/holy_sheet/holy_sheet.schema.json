@@ -160,6 +160,43 @@
           "propertyNames": { "pattern": "^[1-9][0-9]*$" },
           "additionalProperties": { "type": "number", "minimum": 0 }
         },
+        "charts": {
+          "type": "array",
+          "description": "Native Excel charts over CELL RANGES on this sheet: edit a figure and the chart follows. Use one whenever the sheet compares values -- a board reader sees the comparison before the numbers. Keep them quiet: a title that states the point, dataLabels with a format, one colour per series.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "series"],
+            "properties": {
+              "type": { "type": "string", "enum": ["column", "bar", "line", "pie"], "description": "column compares categories; bar does it horizontally (long labels, ranked lists); line shows change over time; pie shows parts of ONE whole (at most ~5 slices)." },
+              "title": { "type": "string" },
+              "categories": { "type": "string", "description": "The labels along the axis (or the pie's slices), as a range: \"A5:A7\". Another sheet: \"'Data'!A5:A7\"." },
+              "series": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["values"],
+                  "properties": {
+                    "name": { "type": "string", "description": "Shown in the legend." },
+                    "values": { "type": "string", "description": "The numbers, as a range the same length as categories: \"B5:B7\"." },
+                    "color": { "type": "string", "description": "#RRGGBB. Ignored for a pie, whose slices take a palette." }
+                  }
+                }
+              },
+              "position": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Where the chart sits: from its top-left cell to its bottom-right cell, {\"from\": \"E2\", \"to\": \"L18\"}. Omitted: to the right of the data, 8 columns by 16 rows.",
+                "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
+              },
+              "dataLabels": { "type": "boolean", "description": "Print each value on the chart. Usually right for a board chart." },
+              "legend": { "type": "boolean", "description": "Defaults to on for several series or a pie, off for one series." },
+              "format": { "type": "string", "description": "Excel number format for the value axis and labels: \"$#,##0\", \"0.0%\", \"$#,##0,K\"." }
+            }
+          }
+        },
         "print": {
           "type": "object",
           "additionalProperties": false,

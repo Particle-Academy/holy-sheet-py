@@ -17,8 +17,11 @@ import re
 from typing import Any
 
 from ..exceptions import SchemaException
-from ..helpers.php import entries, is_array, is_list, is_numeric_string, numeric_string_to_number, type_of
+from ..helpers.php import entries, is_array, is_list, is_numeric_string, numeric_string_to_number, php_to_string, type_of
+from ..workbook.cell_address import CellAddress
+from ..workbook.chart_range import ChartRange
 from . import column_widths
+from .normalizer import CHART_TYPES
 from .repairer import Repairer
 
 _ROW_NUMBER = re.compile(r"^[1-9][0-9]{0,6}$")
@@ -291,6 +294,9 @@ class Validator:
                         errors.append(_error(f"{path}.rowHeights.{row}", "a non-negative number of pixels", type_of(px), px,
                                              "A height is a number of pixels, like 28 (20 is a default row)."))
 
+        if _has(sheet, "charts"):
+            errors.extend(_validate_charts(sheet["charts"], path, php_to_string(_get(sheet, "name"))))
+
         print_spec = _get(sheet, "print")
         if print_spec is not None:
             if not is_array(print_spec):
@@ -377,6 +383,59 @@ class Validator:
 
 def _error(path: str, expected: str, got: str, value: Any, hint: str) -> dict[str, Any]:
     return {"path": path, "expected": expected, "got": got, "value": value, "hint": hint}
+
+
+_HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _validate_charts(charts: Any, path: str, sheet_name: str) -> list[dict[str, Any]]:
+    """Mirrors PHP Validator::validateCharts: path, expectation and hint for each."""
+    # PHP: not an array, or a non-empty array that is not a list. `{}` decodes to [] there.
+    if not is_array(charts) or (isinstance(charts, dict) and len(charts) > 0):
+        return [_error(f"{path}.charts", "a list of charts", type_of(charts), charts,
+                       'charts is a list: [{"type": "column", "categories": "A5:A7", "series": [{"name": "Revenue", "values": "B5:B7"}]}].')]
+    errors: list[dict[str, Any]] = []
+    for i, chart in entries(charts):
+        at = f"{path}.charts[{i}]"
+        if not is_array(chart):
+            errors.append(_error(at, "object", type_of(chart), chart, "A chart is an object with a type and series."))
+            continue
+        chart_type = _get(chart, "type")
+        if not isinstance(chart_type, str) or chart_type not in CHART_TYPES:
+            errors.append(_error(f"{at}.type", "one of: " + ", ".join(CHART_TYPES), type_of(chart_type), chart_type,
+                                 "column compares values across categories; bar does the same horizontally (long labels); line shows change over time; pie shows parts of one whole."))
+        series = _get(chart, "series")
+        if not isinstance(series, (list, tuple)) or len(series) == 0:
+            errors.append(_error(f"{at}.series", "a non-empty list of series", type_of(series), series,
+                                 'Each series names the range it plots: [{"name": "Revenue", "values": "B5:B7"}].'))
+        else:
+            for j, s in enumerate(series):
+                values = _get(s, "values") if is_array(s) else s
+                if not is_array(s) or ChartRange.parse(values, sheet_name) is None:
+                    errors.append(_error(f"{at}.series[{j}].values", 'a cell range like "B5:B7"', type_of(values), values,
+                                         "A range of cells: \"B5:B7\" on this sheet, or \"'Other sheet'!B5:B7\"."))
+                elif _has(s, "color") and (not isinstance(s["color"], str) or not _HEX_COLOR.match(s["color"])):
+                    errors.append(_error(f"{at}.series[{j}].color", "#RRGGBB", type_of(s["color"]), s["color"],
+                                         'A hex colour, like "#1F3A5F".'))
+        if _has(chart, "categories") and ChartRange.parse(chart["categories"], sheet_name) is None:
+            errors.append(_error(f"{at}.categories", 'a cell range like "A5:A7"', type_of(chart["categories"]), chart["categories"],
+                                 'The labels along the axis, as a range: "A5:A7".'))
+        if _has(chart, "position"):
+            p = chart["position"]
+            a = CellAddress.parse(p["from"]) if is_array(p) and isinstance(_get(p, "from"), str) else None
+            b = CellAddress.parse(p["to"]) if is_array(p) and isinstance(_get(p, "to"), str) else None
+            if a is None or b is None or b[0] <= a[0] or b[1] <= a[1]:
+                errors.append(_error(f"{at}.position", '{"from": top-left cell, "to": bottom-right cell}', type_of(p), p,
+                                     'Two cells, the second below and to the right of the first: {"from": "E2", "to": "L18"} is 7 columns by 16 rows.'))
+        for key in ("title", "format"):
+            if _has(chart, key) and not isinstance(chart[key], str):
+                errors.append(_error(f"{at}.{key}", "string", type_of(chart[key]), chart[key],
+                                     'An Excel number format for the axis and labels, like "$#,##0" or "0.0%".' if key == "format" else "The chart title."))
+        for key in ("dataLabels", "legend"):
+            if _has(chart, key) and not isinstance(chart[key], bool):
+                errors.append(_error(f"{at}.{key}", "boolean", type_of(chart[key]), chart[key],
+                                     "true prints each value on the chart." if key == "dataLabels" else "Defaults to on for several series or a pie."))
+    return errors
 
 
 def _get(container: Any, key: str) -> Any:

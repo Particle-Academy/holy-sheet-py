@@ -98,6 +98,25 @@ class SheetSchema(TypedDict, total=False):
     columnWidths: dict[int | str, float]
     frozenRows: int
     frozenCols: int
+    # Native charts drawn over cell ranges; they stay live when the cells change.
+    charts: list[ChartSchema]
+
+
+class ChartSeriesInput(TypedDict, total=False):
+    name: str
+    values: str  # "B5:B7", or "'Other sheet'!B5:B7"
+    color: str  # "#RRGGBB"
+
+
+class ChartSchema(TypedDict, total=False):
+    type: Literal["column", "bar", "line", "pie"]
+    title: str
+    categories: str  # axis labels, "A5:A7"
+    series: list[ChartSeriesInput]
+    position: dict[str, str]  # {"from": "E2", "to": "L18"}; defaults to beside the data
+    dataLabels: bool
+    legend: bool
+    format: str  # Excel number format for the axis and labels, "$#,##0"
 
 
 class WorkbookMeta(TypedDict, total=False):

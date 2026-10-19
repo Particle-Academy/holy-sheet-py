@@ -171,4 +171,48 @@ SCHEMAS: dict[str, Any] = {
             }
         ],
     },
+    # Charts: every type, a cross-sheet range, a sheet with comments AND a chart
+    # (rel ids), a coloured series, a formula cell with no cached value (no point
+    # cached), and a default position. Same document as the Node port's.
+    "charts": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Q3 Revenue",
+                "cells": {
+                    "A4": {"value": "Region"},
+                    "B4": {"value": "Revenue", "comment": {"text": "USD"}},
+                    "A5": {"value": "North"},
+                    "B5": {"value": 1250000.5},
+                    "C5": {"value": 0.184},
+                    "A6": {"value": "South"},
+                    "B6": {"value": 980400.25},
+                    "C6": {"value": -0.042},
+                    "A7": {"value": "EMEA"},
+                    "B7": {"value": 2100000},
+                    "C7": {"value": 0.311},
+                    "B8": {"formula": "SUM(B5:B7)"},
+                },
+                "charts": [
+                    {
+                        "type": "column",
+                        "title": "Q3 revenue & growth",
+                        "categories": "A5:A7",
+                        "series": [{"name": "Revenue", "values": "B5:B7", "color": "#1F3A5F"}],
+                        "position": {"from": "E2", "to": "L18"},
+                        "dataLabels": True,
+                        "format": "$#,##0",
+                    },
+                    {"type": "bar", "categories": "A5:A7", "series": [{"name": "Growth", "values": "C5:C7"}], "dataLabels": True, "format": "0.0%"},
+                    {"type": "line", "categories": "A5:A7", "series": [{"values": "B5:B8"}, {"name": "Growth", "values": "C5:C7", "color": "#F97316"}]},
+                    {"type": "pie", "categories": "A5:A7", "series": [{"values": "B5:B7"}], "legend": False},
+                ],
+            },
+            {
+                "name": "Summary",
+                "cells": {"A1": {"value": "See chart"}},
+                "charts": [{"type": "column", "categories": "'Q3 Revenue'!A5:A7", "series": [{"values": "'Q3 Revenue'!B5:B7"}]}],
+            },
+        ],
+    },
 }

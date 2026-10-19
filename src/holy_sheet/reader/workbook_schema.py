@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..workbook.cell import Cell
+from ..workbook.cell_address import CellAddress
 from ..workbook.cell_comment import CellComment
 from ..workbook.cell_format import CellFormat
 from ..workbook.sheet import Sheet
@@ -56,6 +57,38 @@ def _sheet_to_schema(sheet: Sheet) -> dict[str, Any]:
         if sheet.print_setup["footer"] is not None:
             print_out["footer"] = {k: v for k, v in sheet.print_setup["footer"].items() if v != ""}
         out["print"] = print_out
+    if sheet.charts:
+        out["charts"] = [_chart_to_schema(chart, sheet.name) for chart in sheet.charts]
+    return out
+
+
+def _chart_to_schema(chart: dict[str, Any], sheet_name: str) -> dict[str, Any]:
+    """A normalised chart in the schema's own form. Mirrors PHP WorkbookSchema::chartToSchema."""
+    out: dict[str, Any] = {"type": chart["type"]}
+    if chart["title"] is not None:
+        out["title"] = chart["title"]
+    if chart["categories"] is not None:
+        out["categories"] = chart["categories"].to_schema(sheet_name)
+    series_out = []
+    for s in chart["series"]:
+        series: dict[str, Any] = {}
+        if s["name"] is not None:
+            series["name"] = s["name"]
+        series["values"] = s["values"].to_schema(sheet_name)
+        if s["color"] is not None:
+            series["color"] = "#" + s["color"]
+        series_out.append(series)
+    out["series"] = series_out
+    out["position"] = {
+        "from": CellAddress.letter(chart["from"][0]) + str(chart["from"][1] + 1),
+        "to": CellAddress.letter(chart["to"][0]) + str(chart["to"][1] + 1),
+    }
+    if chart["dataLabels"]:
+        out["dataLabels"] = True
+    if chart["legend"] is not None:
+        out["legend"] = chart["legend"]
+    if chart["format"] is not None:
+        out["format"] = chart["format"]
     return out
 
 

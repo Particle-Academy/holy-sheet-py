@@ -12,6 +12,29 @@ what moved.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-19
+
+### Added
+
+- **`charts`: native Excel charts over cell ranges.** A sheet takes
+  `charts: [{type, title?, categories?, series: [{name?, values, color?}],
+  position?: {from, to}, dataLabels?, legend?, format?}]`. `type` is `column`,
+  `bar` (horizontal, for long labels), `line` or `pie`. Ranges are A1 ranges on
+  the chart's own sheet (`"B5:B7"`) or another (`"'Q3 Revenue'!B5:B7"`).
+  `position` anchors the chart between two cells and defaults to beside the
+  data. `format` is an Excel number format for the axis and labels (`"$#,##0"`).
+  Agent-built workbooks reviewed for a board were marked down for having no
+  chart where the point was comparison, and there was no way to make one.
+- These are real charts, not pictures: edit a figure and the chart follows. The
+  values are cached too, so a viewer that does not recalculate still draws them.
+  Styling is quiet on purpose (grey 9pt axis text, light gridlines, no tick
+  marks, a bold 12pt title) so a chart reads as part of the sheet.
+- Read back by `describe()` / `read()` in the same shape, validated with a hint
+  per field, and published in the schema. Byte-identical across the PHP, Node
+  and Python engines.
+- **Nothing to do**: a workbook without `charts` is byte-identical to before. A
+  sheet with comments keeps their relationship ids; the drawing takes the next.
+
 ## [0.6.0] — 2026-10-19
 
 ### Added

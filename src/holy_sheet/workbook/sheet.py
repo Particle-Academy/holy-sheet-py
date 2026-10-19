@@ -31,6 +31,10 @@ class Sheet:
     # {"orientation": str | None, "fitToWidth": bool, "footer": {left, center, right} | None},
     # or None. Named print_setup because `print` would shadow the builtin.
     print_setup: dict[str, Any] | None = None
+    # Normalised charts, PHP's shape: {type, title, categories: ChartRange | None,
+    # series: [{name, values: ChartRange, color}], from: [col, row0], to: [col, row0],
+    # legend: bool | None, dataLabels: bool, format}. Both corners are 0-based.
+    charts: list[dict[str, Any]] = field(default_factory=list)
 
     def rows(self) -> dict[int, dict[str, Cell]]:
         """Group cells by 1-based row number: {row: {column letter: Cell}}.

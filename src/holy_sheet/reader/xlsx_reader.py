@@ -23,6 +23,7 @@ from ..exceptions import UnsupportedFormatException
 from ..workbook.cell_comment import CellComment
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
+from . import chart_parser
 from .comments_parser import CommentsParser
 from .rels_parser import RelsParser
 from .shared_strings_parser import SharedStringsParser
@@ -80,11 +81,39 @@ class XlsxReader:
                         if comments_xml is not None:
                             comments.update(CommentsParser.parse(comments_xml))
 
-                sheets.append(
-                    WorksheetParser.parse(
-                        worksheet_xml, name, styles_index, comments, shared_strings
-                    )
+                sheet = WorksheetParser.parse(
+                    worksheet_xml, name, styles_index, comments, shared_strings
                 )
+
+                # Charts: sheet rels -> drawing -> drawing rels -> chart parts (see PHP).
+                if sheet_rels_xml is not None:
+                    charts: list[dict[str, Any]] = []
+                    for rel in RelsParser.by_type(RelsParser.parse(sheet_rels_xml), "/drawing").values():
+                        drawing_path = _resolve_relative_path(sheet_path, rel["Target"])
+                        directory, _, base = drawing_path.rpartition("/")
+                        drawing_xml = _read(archive, drawing_path)
+                        drawing_rels_xml = _read(archive, f"{directory}/_rels/{base}.rels")
+                        if drawing_xml is None or drawing_rels_xml is None:
+                            continue
+                        drawing_rels = RelsParser.parse(drawing_rels_xml)
+                        for anchor in chart_parser.anchors(drawing_xml):
+                            chart_target = drawing_rels.get(anchor["rel"], {}).get("Target")
+                            chart_xml = (
+                                _read(archive, _resolve_relative_path(drawing_path, chart_target))
+                                if isinstance(chart_target, str)
+                                else None
+                            )
+                            parsed = (
+                                chart_parser.chart(chart_xml, name, anchor["from"], anchor["to"])
+                                if chart_xml is not None
+                                else None
+                            )
+                            if parsed is not None:
+                                charts.append(parsed)
+                    if charts:
+                        sheet.charts = charts
+
+                sheets.append(sheet)
                 i += 1
 
             meta = _parse_doc_props(_read(archive, "docProps/core.xml"))

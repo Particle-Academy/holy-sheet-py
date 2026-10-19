@@ -25,6 +25,7 @@ from ..workbook.cell import Cell
 from ..workbook.cell_address import CellAddress
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
+from . import chart_xml
 from .styles_registry import StylesRegistry
 
 # A fixed DOS timestamp (the zip format's own minimum) instead of "now". Without
@@ -81,15 +82,34 @@ class XlsxWriter:
             ("docProps/app.xml", self.app_xml()),
         ]
 
+        # Charts are numbered across the workbook in sheet order; a sheet's
+        # drawing shares its sheet's number, as its vmlDrawing does.
+        first_chart: list[int] = []
+        next_chart = 1
+        for sheet in workbook.sheets:
+            first_chart.append(next_chart)
+            next_chart += len(sheet.charts)
+
         for i, sheet in enumerate(workbook.sheets):
             n = i + 1
             parts.append((f"xl/worksheets/sheet{n}.xml", sheet_xmls[i]))
-            if sheet.has_comments():
+            if sheet.has_comments() or sheet.charts:
                 parts.append(
-                    (f"xl/worksheets/_rels/sheet{n}.xml.rels", self.sheet_rels_xml(n))
+                    (
+                        f"xl/worksheets/_rels/sheet{n}.xml.rels",
+                        self.sheet_rels_xml(n, sheet.has_comments(), bool(sheet.charts)),
+                    )
                 )
+            if sheet.has_comments():
                 parts.append((f"xl/comments{n}.xml", self.comments_xml(sheet)))
                 parts.append((f"xl/drawings/vmlDrawing{n}.vml", self.vml_drawing_xml(sheet)))
+            if sheet.charts:
+                parts.append((f"xl/drawings/drawing{n}.xml", chart_xml.drawing(sheet.charts, first_chart[i])))
+                parts.append(
+                    (f"xl/drawings/_rels/drawing{n}.xml.rels", chart_xml.drawing_rels(sheet.charts, first_chart[i]))
+                )
+                for k, chart in enumerate(sheet.charts):
+                    parts.append((f"xl/charts/chart{first_chart[i] + k}.xml", chart_xml.chart(chart, workbook)))
 
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -123,6 +143,22 @@ class XlsxWriter:
                 f'<Override PartName="/xl/comments{n}.xml"'
                 ' ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>'
             )
+
+        chart_num = 1
+        for i, sheet in enumerate(workbook.sheets):
+            if not sheet.charts:
+                continue
+            n = i + 1
+            overrides += (
+                f'<Override PartName="/xl/drawings/drawing{n}.xml"'
+                ' ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>'
+            )
+            for _ in sheet.charts:
+                overrides += (
+                    f'<Override PartName="/xl/charts/chart{chart_num}.xml"'
+                    ' ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
+                )
+                chart_num += 1
 
         defaults = (
             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
@@ -185,15 +221,26 @@ class XlsxWriter:
             + "</Relationships>"
         )
 
-    def sheet_rels_xml(self, sheet_num: int) -> str:
+    def sheet_rels_xml(self, sheet_num: int, comments: bool = True, charts: bool = False) -> str:
+        """Comments keep rId1 (vml) and rId2, which existing files always have; the chart drawing takes the next id."""
+        rels = ""
+        if comments:
+            rels += (
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"'
+                f' Target="../drawings/vmlDrawing{sheet_num}.vml"/>'
+                '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"'
+                f' Target="../comments{sheet_num}.xml"/>'
+            )
+        if charts:
+            rels += (
+                f'<Relationship Id="{_drawing_rel_id(comments)}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"'
+                f' Target="../drawings/drawing{sheet_num}.xml"/>'
+            )
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"'
-            f' Target="../drawings/vmlDrawing{sheet_num}.vml"/>'
-            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"'
-            f' Target="../comments{sheet_num}.xml"/>'
-            "</Relationships>"
+            + rels
+            + "</Relationships>"
         )
 
     def sheet_xml(self, sheet: Sheet, styles: StylesRegistry) -> str:
@@ -289,6 +336,7 @@ class XlsxWriter:
             + merges_xml
             + page_setup_xml
             + header_footer_xml
+            + (f'<drawing r:id="{_drawing_rel_id(sheet.has_comments())}"/>' if sheet.charts else "")
             + legacy_drawing
             + "</worksheet>"
         )
@@ -436,6 +484,10 @@ class XlsxWriter:
             "<AppVersion>1.0</AppVersion>"
             "</Properties>"
         )
+
+
+def _drawing_rel_id(comments: bool) -> str:
+    return "rId3" if comments else "rId1"
 
 
 def _coalesce(preferred, fallback):
