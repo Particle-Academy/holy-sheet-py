@@ -174,3 +174,11 @@ def test_colours_single_points_to_make_the_finding_stand_out() -> None:
         {"index": 3, "color": "#C2410C"}, {"index": 0, "color": "red"}]}]}]))]
     assert "sheets[0].charts[0].series[0].points[0].index" in paths
     assert "sheets[0].charts[0].series[0].points[1].color" in paths
+
+
+def test_starts_a_bar_axis_at_zero_unless_a_value_is_negative_or_it_is_a_line() -> None:
+    high = _workbook([{**REVENUE, "series": [{"values": "B5:B7"}]}])
+    high["sheets"][0]["cells"].update({"B5": 96.1, "B6": 93.8, "B7": 90.7})
+    assert '<c:scaling><c:orientation val="minMax"/><c:min val="0"/></c:scaling>' in _parts(high)["xl/charts/chart1.xml"]
+    assert '<c:min val="0"/>' not in _parts(_workbook([{**REVENUE, "series": [{"values": "C5:C7"}]}]))["xl/charts/chart1.xml"]
+    assert '<c:min val="0"/>' not in _parts(_workbook([{**REVENUE, "type": "line"}]))["xl/charts/chart1.xml"]

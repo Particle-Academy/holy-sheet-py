@@ -81,7 +81,9 @@ def chart(chart: dict[str, Any], workbook: Workbook) -> str:
             + series + labels
             + '<c:gapWidth val="80"/><c:axId val="10"/><c:axId val="20"/></c:barChart>'
         )
-    axes = "" if chart_type == "pie" else _axes(chart_type == "bar", chart["format"])
+    # A bar starts at zero. Mirrors PHP ChartXml::chart.
+    zero_base = chart_type != "line" and _non_negative(chart, workbook)
+    axes = "" if chart_type == "pie" else _axes(chart_type == "bar", chart["format"], zero_base)
 
     legend = chart["legend"]
     if legend is None:
@@ -209,7 +211,12 @@ def _data_labels(chart_type: str, fmt: str | None) -> str:
     )
 
 
-def _axes(horizontal: bool, fmt: str | None) -> str:
+def _non_negative(chart: dict[str, Any], workbook: Workbook) -> bool:
+    # Every plotted (numeric) value is zero or more. Mirrors PHP ChartXml::nonNegative.
+    return all(not (_is_number(v) and v < 0) for s in chart["series"] for v in _values(s["values"], workbook))
+
+
+def _axes(horizontal: bool, fmt: str | None, zero_base: bool = False) -> str:
     cat_pos = "l" if horizontal else "b"
     val_pos = "b" if horizontal else "l"
     num_fmt = (
@@ -224,7 +231,7 @@ def _axes(horizontal: bool, fmt: str | None) -> str:
         + '<c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/>'
         + '<c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="BFBFBF"/></a:solidFill></a:ln></c:spPr>'
         + '<c:crossAx val="20"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>'
-        + '<c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/></c:scaling>'
+        + '<c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/>' + ('<c:min val="0"/>' if zero_base else "") + "</c:scaling>"
         + f'<c:delete val="0"/><c:axPos val="{val_pos}"/>'
         + '<c:majorGridlines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="E5E7EB"/></a:solidFill></a:ln></c:spPr></c:majorGridlines>'
         + num_fmt
