@@ -64,11 +64,17 @@ def _parse_print(root: Element) -> dict[str, Any] | None:
         and attr(setup, "fitToWidth") == "1"
         and (attr(setup, "fitToHeight") or "") in ("0", "")
     )
+    page = (
+        fit_to_page
+        and setup is not None
+        and attr(setup, "fitToWidth") == "1"
+        and attr(setup, "fitToHeight") == "1"
+    )
     odd_footer = find(find(root, "headerFooter"), "oddFooter")
     footer = parse_footer_codes(text_of(odd_footer)) if odd_footer is not None else None
-    if orientation is None and not fit and footer is None:
+    if orientation is None and not fit and not page and footer is None:
         return None
-    return {"orientation": orientation, "fitToWidth": fit, "footer": footer}
+    return {"orientation": orientation, "fitToWidth": fit, "fitToPage": page, "footer": footer}
 
 
 def parse_footer_codes(codes: str) -> dict[str, str] | None:

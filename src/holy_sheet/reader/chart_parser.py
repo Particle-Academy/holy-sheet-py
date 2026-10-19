@@ -117,7 +117,7 @@ def chart(chart_xml: bytes | str, sheet_name: str, start: list[int], end: list[i
         if categories is None:
             cat_ref = _formula(ser, "cat")
             categories = ChartRange.parse(cat_ref, sheet_name) if cat_ref is not None else None
-        series.append({"name": _series_name(ser), "values": values, "color": _series_color(ser)})
+        series.append({"name": _series_name(ser), "values": values, "color": _series_color(ser), "points": _points(ser)})
     if not series:
         return None
 
@@ -184,6 +184,18 @@ def _series_name(ser: ElementTree.Element) -> str | None:
         return _text(v)
     cached = _descendants(tx, _NS_C, "v")
     return _text(cached[0]) if cached else None
+
+
+def _points(ser: ElementTree.Element) -> list[dict[str, Any]]:
+    # Coloured points (c:dPt), by index. Mirrors PHP ChartParser::points.
+    by_index: dict[int, str] = {}
+    for d_pt in _children(ser, "dPt"):
+        idx = _val(d_pt, "idx")
+        colors = _descendants(d_pt, _NS_A, "srgbClr")
+        color = colors[0].get("val", "").upper() if colors else ""
+        if idx is not None and _DIGITS.match(idx) and _HEX6.match(color):
+            by_index[int(idx)] = color
+    return [{"index": i, "color": by_index[i]} for i in sorted(by_index)]
 
 
 def _series_color(ser: ElementTree.Element) -> str | None:

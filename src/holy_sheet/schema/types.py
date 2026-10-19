@@ -102,10 +102,16 @@ class SheetSchema(TypedDict, total=False):
     charts: list[ChartSchema]
 
 
+class ChartPointInput(TypedDict):
+    index: int  # 0-based within values
+    color: str  # "#RRGGBB"
+
+
 class ChartSeriesInput(TypedDict, total=False):
     name: str
     values: str  # "B5:B7", or "'Other sheet'!B5:B7"
     color: str  # "#RRGGBB"
+    points: list[ChartPointInput]  # colour single points to make the finding stand out
 
 
 class ChartSchema(TypedDict, total=False):

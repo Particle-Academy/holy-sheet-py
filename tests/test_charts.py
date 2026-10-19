@@ -150,3 +150,27 @@ def test_publishes_charts_in_the_schema() -> None:
     sheet = tool_definition()["definitions"]["Sheet"]["properties"]
     assert "charts" in sheet
     assert "categories" in json.dumps(sheet["charts"])
+
+
+def test_colours_single_points_to_make_the_finding_stand_out() -> None:
+    chart = {
+        "type": "bar",
+        "categories": "A5:A7",
+        "series": [{"name": "Revenue", "values": "B5:B7", "color": "#94A3B8", "points": [{"index": 2, "color": "#C2410C"}]}],
+        "position": {"from": "E2", "to": "L18"},
+    }
+    xml = _parts(_workbook([chart]))["xl/charts/chart1.xml"]
+    assert ('<c:dPt><c:idx val="2"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/><c:spPr><a:solidFill>'
+            '<a:srgbClr val="C2410C"/></a:solidFill></c:spPr></c:dPt>') in xml
+    assert xml.index('val="94A3B8"') < xml.index("<c:dPt>") < xml.index("<c:cat>")
+
+    pie = _parts(_workbook([{**chart, "type": "pie"}]))["xl/charts/chart1.xml"]
+    assert '<c:dPt><c:idx val="2"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="C2410C"/></a:solidFill></c:spPr></c:dPt>' in pie
+
+    got = read(to_bytes(_workbook([chart])))["sheets"][0]["charts"][0]["series"][0]["points"]
+    assert got == [{"index": 2, "color": "#C2410C"}]
+
+    paths = [e["path"] for e in validate(_workbook([{**chart, "series": [{"values": "B5:B7", "points": [
+        {"index": 3, "color": "#C2410C"}, {"index": 0, "color": "red"}]}]}]))]
+    assert "sheets[0].charts[0].series[0].points[0].index" in paths
+    assert "sheets[0].charts[0].series[0].points[1].color" in paths

@@ -171,6 +171,11 @@ SCHEMAS: dict[str, Any] = {
             }
         ],
     },
+    # One page wide and tall. Same document as the Node port's.
+    "printFitToPage": {
+        "meta": META,
+        "sheets": [{"name": "Fit", "cells": {"A1": {"value": "Title"}}, "print": {"orientation": "portrait", "fitToPage": True}}],
+    },
     # Charts: every type, a cross-sheet range, a sheet with comments AND a chart
     # (rel ids), a coloured series, a formula cell with no cached value (no point
     # cached), and a default position. Same document as the Node port's.
@@ -198,14 +203,14 @@ SCHEMAS: dict[str, Any] = {
                         "type": "column",
                         "title": "Q3 revenue & growth",
                         "categories": "A5:A7",
-                        "series": [{"name": "Revenue", "values": "B5:B7", "color": "#1F3A5F"}],
+                        "series": [{"name": "Revenue", "values": "B5:B7", "color": "#1F3A5F", "points": [{"index": 2, "color": "#C2410C"}]}],
                         "position": {"from": "E2", "to": "L18"},
                         "dataLabels": True,
                         "format": "$#,##0",
                     },
                     {"type": "bar", "categories": "A5:A7", "series": [{"name": "Growth", "values": "C5:C7"}], "dataLabels": True, "format": "0.0%"},
-                    {"type": "line", "categories": "A5:A7", "series": [{"values": "B5:B8"}, {"name": "Growth", "values": "C5:C7", "color": "#F97316"}]},
-                    {"type": "pie", "categories": "A5:A7", "series": [{"values": "B5:B7"}], "legend": False},
+                    {"type": "line", "categories": "A5:A7", "series": [{"values": "B5:B8", "points": [{"index": 3, "color": "#111827"}]}, {"name": "Growth", "values": "C5:C7", "color": "#F97316"}]},
+                    {"type": "pie", "categories": "A5:A7", "series": [{"values": "B5:B7", "points": [{"index": 0, "color": "#0F766E"}]}], "legend": False},
                 ],
             },
             {

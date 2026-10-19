@@ -306,17 +306,19 @@ class XlsxWriter:
 
         # Print setup, in CT_Worksheet order (see the PHP engine).
         print_setup = sheet.print_setup
-        sheet_pr_xml = (
-            '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
-            if print_setup is not None and print_setup["fitToWidth"]
-            else ""
-        )
+        fits = print_setup is not None and (print_setup["fitToWidth"] or print_setup["fitToPage"])
+        sheet_pr_xml = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' if fits else ""
         page_setup_xml = ""
-        if print_setup is not None and (print_setup["orientation"] is not None or print_setup["fitToWidth"]):
+        if print_setup is not None and (print_setup["orientation"] is not None or fits):
             page_setup_xml = (
                 "<pageSetup"
                 + (f' orientation="{print_setup["orientation"]}"' if print_setup["orientation"] is not None else "")
-                + (' fitToWidth="1" fitToHeight="0"' if print_setup["fitToWidth"] else "")
+                # fitToPage: one page wide AND tall. fitToWidth: one wide, as tall as it needs.
+                + (
+                    ' fitToWidth="1" fitToHeight="1"' if print_setup["fitToPage"]
+                    else ' fitToWidth="1" fitToHeight="0"' if print_setup["fitToWidth"]
+                    else ""
+                )
                 + "/>"
             )
         header_footer_xml = (

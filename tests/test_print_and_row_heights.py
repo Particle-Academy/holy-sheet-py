@@ -69,3 +69,14 @@ def test_malformed_print_and_row_heights_are_refused() -> None:
         "sheets[0].print.fitToWidth",
         "sheets[0].print.footer.left",
     } <= paths
+
+
+def test_fits_a_short_sheet_onto_one_page_so_a_chart_below_the_table_is_never_cut() -> None:
+    xml = _sheet_xml(_schema(print={"orientation": "portrait", "fitToPage": True}))
+    assert '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' in xml
+    assert '<pageSetup orientation="portrait" fitToWidth="1" fitToHeight="1"/>' in xml
+
+    got = read(to_bytes(_schema(print={"fitToPage": True, "footer": {"right": "Page {page} of {pages}"}})))["sheets"][0]["print"]
+    assert got == {"fitToPage": True, "footer": {"right": "Page {page} of {pages}"}}
+
+    assert [e["path"] for e in validate(_schema(print={"fitToPage": 1}))] == ["sheets[0].print.fitToPage"]

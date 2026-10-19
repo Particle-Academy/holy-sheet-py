@@ -28,7 +28,7 @@ class Sheet:
     frozen_cols: int = 0
     # 1-based row number -> height in pixels, ascending.
     row_heights: dict[int, float] = field(default_factory=dict)
-    # {"orientation": str | None, "fitToWidth": bool, "footer": {left, center, right} | None},
+    # {"orientation": str | None, "fitToWidth": bool, "fitToPage": bool, "footer": {left, center, right} | None},
     # or None. Named print_setup because `print` would shadow the builtin.
     print_setup: dict[str, Any] | None = None
     # Normalised charts, PHP's shape: {type, title, categories: ChartRange | None,

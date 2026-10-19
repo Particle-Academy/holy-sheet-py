@@ -443,15 +443,16 @@ def normalize_print(print_spec: Any) -> dict[str, Any] | None:
     orientation = print_spec.get("orientation")
     orientation = orientation if orientation in ("portrait", "landscape") else None
     fit = print_spec.get("fitToWidth") is True
+    page = print_spec.get("fitToPage") is True
     footer = None
     raw = print_spec.get("footer")
     if isinstance(raw, dict):
         footer = {k: raw[k] if isinstance(raw.get(k), str) else "" for k in ("left", "center", "right")}
         if footer["left"] == "" and footer["center"] == "" and footer["right"] == "":
             footer = None
-    if orientation is None and not fit and footer is None:
+    if orientation is None and not fit and not page and footer is None:
         return None
-    return {"orientation": orientation, "fitToWidth": fit, "footer": footer}
+    return {"orientation": orientation, "fitToWidth": fit, "fitToPage": page, "footer": footer}
 
 
 CHART_TYPES = ("column", "bar", "line", "pie")
@@ -463,6 +464,23 @@ _HEX_COLOR = re.compile(r"^#([0-9A-Fa-f]{6})$")
 def _key(value: Any, key: str) -> Any:
     """PHP ``$value[$key] ?? null`` on a value that may not be a map."""
     return value.get(key) if isinstance(value, dict) else None
+
+
+def normalize_points(points: Any, count: int) -> list[dict[str, Any]]:
+    # A series' coloured points, by index. Mirrors PHP Normalizer::normalizePoints:
+    # an index outside the values or a colour that is not #RRGGBB is dropped, and a
+    # repeated index keeps its last colour.
+    if not is_array(points):
+        return []
+    by_index: dict[int, str] = {}
+    for _, p in entries(points):
+        index = _key(p, "index")
+        color = _key(p, "color")
+        match = _HEX_COLOR.match(color) if isinstance(color, str) else None
+        # PHP is_int: a bool is not an int.
+        if isinstance(index, int) and not isinstance(index, bool) and 0 <= index < count and match:
+            by_index[index] = match.group(1).upper()
+    return [{"index": i, "color": by_index[i]} for i in sorted(by_index)]
 
 
 def normalize_charts(charts: Any, sheet_name: str, cells: dict[str, Cell]) -> list[dict[str, Any]]:
@@ -494,6 +512,7 @@ def normalize_charts(charts: Any, sheet_name: str, cells: dict[str, Cell]) -> li
                 "name": name if isinstance(name, str) else None,
                 "values": values,
                 "color": match.group(1).upper() if match else None,
+                "points": normalize_points(_key(s, "points"), len(values.addresses())),
             })
         if not series:
             continue

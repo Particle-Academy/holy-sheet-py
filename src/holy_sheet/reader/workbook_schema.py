@@ -54,6 +54,8 @@ def _sheet_to_schema(sheet: Sheet) -> dict[str, Any]:
             print_out["orientation"] = sheet.print_setup["orientation"]
         if sheet.print_setup["fitToWidth"]:
             print_out["fitToWidth"] = True
+        if sheet.print_setup["fitToPage"]:
+            print_out["fitToPage"] = True
         if sheet.print_setup["footer"] is not None:
             print_out["footer"] = {k: v for k, v in sheet.print_setup["footer"].items() if v != ""}
         out["print"] = print_out
@@ -77,6 +79,8 @@ def _chart_to_schema(chart: dict[str, Any], sheet_name: str) -> dict[str, Any]:
         series["values"] = s["values"].to_schema(sheet_name)
         if s["color"] is not None:
             series["color"] = "#" + s["color"]
+        if s.get("points"):
+            series["points"] = [{"index": p["index"], "color": "#" + p["color"]} for p in s["points"]]
         series_out.append(series)
     out["series"] = series_out
     out["position"] = {

@@ -132,8 +132,20 @@ def _series(i: int, s: dict[str, Any], chart: dict[str, Any], workbook: Workbook
     marker = '<c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>' if chart_type == "line" else ""
     cat = "<c:cat>" + _str_ref(chart["categories"], workbook) + "</c:cat>" if chart["categories"] is not None else ""
     smooth = '<c:smooth val="0"/>' if chart_type == "line" else ""
+    # A coloured point (dPt) follows the series' own fill, invert and marker,
+    # and precedes its categories. Mirrors PHP ChartXml::series.
+    points = ""
+    for p in s.get("points", []):
+        solid = f'<a:solidFill><a:srgbClr val="{p["color"]}"/></a:solidFill>'
+        if chart_type == "line":
+            body = f'<c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr>{solid}<a:ln>{solid}</a:ln></c:spPr></c:marker><c:bubble3D val="0"/>'
+        elif chart_type == "pie":
+            body = f'<c:bubble3D val="0"/><c:spPr>{solid}</c:spPr>'
+        else:
+            body = f'<c:invertIfNegative val="0"/><c:bubble3D val="0"/><c:spPr>{solid}</c:spPr>'
+        points += f'<c:dPt><c:idx val="{p["index"]}"/>' + body + "</c:dPt>"
     return (
-        f'<c:ser><c:idx val="{i}"/><c:order val="{i}"/>' + name + fill + invert + marker
+        f'<c:ser><c:idx val="{i}"/><c:order val="{i}"/>' + name + fill + invert + marker + points
         + cat + "<c:val>" + _num_ref(s["values"], workbook) + "</c:val>" + smooth + "</c:ser>"
     )
 

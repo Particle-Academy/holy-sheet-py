@@ -311,6 +311,10 @@ class Validator:
                 if fit is not None and not isinstance(fit, bool):
                     errors.append(_error(f"{path}.print.fitToWidth", "boolean", type_of(fit), fit,
                                          "true scales the sheet to one page wide when printed."))
+                page = _get(print_spec, "fitToPage")
+                if page is not None and not isinstance(page, bool):
+                    errors.append(_error(f"{path}.print.fitToPage", "boolean", type_of(page), page,
+                                         "true scales the sheet onto ONE page, wide and tall: a one-page summary with a chart prints whole."))
                 footer = _get(print_spec, "footer")
                 if footer is not None:
                     if not is_array(footer):
@@ -388,6 +392,24 @@ def _error(path: str, expected: str, got: str, value: Any, hint: str) -> dict[st
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
+def _validate_points(points: Any, at: str, values: ChartRange | None) -> list[dict[str, Any]]:
+    # Mirrors PHP Validator::validatePoints.
+    if not isinstance(points, (list, tuple)) and not (isinstance(points, dict) and len(points) == 0):
+        return [_error(at, "a list of points", type_of(points), points,
+                       'Colour single points: [{"index": 2, "color": "#C2410C"}], index 0-based within values.')]
+    count = 0 if values is None else len(values.addresses())
+    errors: list[dict[str, Any]] = []
+    for k, p in entries(points):
+        index = _get(p, "index") if is_array(p) else None
+        color = _get(p, "color") if is_array(p) else None
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= count:
+            errors.append(_error(f"{at}[{k}].index", "an index within values (0 to " + str(max(0, count - 1)) + ")", type_of(index), index,
+                                 'The 0-based position of the point in its values range: "B5:B7" has points 0, 1 and 2.'))
+        if not isinstance(color, str) or not _HEX_COLOR.match(color):
+            errors.append(_error(f"{at}[{k}].color", "#RRGGBB", type_of(color), color, 'A hex colour, like "#C2410C".'))
+    return errors
+
+
 def _validate_charts(charts: Any, path: str, sheet_name: str) -> list[dict[str, Any]]:
     """Mirrors PHP Validator::validateCharts: path, expectation and hint for each."""
     # PHP: not an array, or a non-empty array that is not a list. `{}` decodes to [] there.
@@ -417,6 +439,8 @@ def _validate_charts(charts: Any, path: str, sheet_name: str) -> list[dict[str, 
                 elif _has(s, "color") and (not isinstance(s["color"], str) or not _HEX_COLOR.match(s["color"])):
                     errors.append(_error(f"{at}.series[{j}].color", "#RRGGBB", type_of(s["color"]), s["color"],
                                          'A hex colour, like "#1F3A5F".'))
+                if is_array(s) and _has(s, "points"):
+                    errors.extend(_validate_points(s["points"], f"{at}.series[{j}].points", ChartRange.parse(values, sheet_name)))
         if _has(chart, "categories") and ChartRange.parse(chart["categories"], sheet_name) is None:
             errors.append(_error(f"{at}.categories", 'a cell range like "A5:A7"', type_of(chart["categories"]), chart["categories"],
                                  'The labels along the axis, as a range: "A5:A7".'))

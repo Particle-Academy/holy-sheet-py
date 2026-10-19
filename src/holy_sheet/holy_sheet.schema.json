@@ -181,7 +181,20 @@
                   "properties": {
                     "name": { "type": "string", "description": "Shown in the legend." },
                     "values": { "type": "string", "description": "The numbers, as a range the same length as categories: \"B5:B7\"." },
-                    "color": { "type": "string", "description": "#RRGGBB. Ignored for a pie, whose slices take a palette." }
+                    "color": { "type": "string", "description": "#RRGGBB. Ignored for a pie, whose slices take a palette." },
+                    "points": {
+                      "type": "array",
+                      "description": "Colour single points to make the finding stand out: the one bar or slice the title is about. index is 0-based within values: [{\"index\": 2, \"color\": \"#C2410C\"}].",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["index", "color"],
+                        "properties": {
+                          "index": { "type": "integer", "minimum": 0 },
+                          "color": { "type": "string", "description": "#RRGGBB" }
+                        }
+                      }
+                    }
                   }
                 }
               },
@@ -204,6 +217,7 @@
           "properties": {
             "orientation": { "type": "string", "enum": ["portrait", "landscape"] },
             "fitToWidth": { "type": "boolean", "description": "Scale the sheet to one page wide (as many pages tall as it needs)." },
+            "fitToPage": { "type": "boolean", "description": "Scale the sheet onto ONE page, wide and tall. Use it for a one-page summary with a chart, so the page break never cuts the chart." },
             "footer": {
               "type": "object",
               "additionalProperties": false,
