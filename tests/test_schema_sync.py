@@ -36,7 +36,7 @@ from pathlib import Path
 
 import holy_sheet
 
-SHARED_SCHEMA_SHA256 = "a09d491ee67c32d9c37e8608a6bc3334993a6c77f978e5ffe158f769e77e2d9c"
+SHARED_SCHEMA_SHA256 = "e8c8efe9bdb0776a7c106a94db16a8d18c3097f751093307ad355dce4729bd90"
 
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[1] / "src" / "holy_sheet" / "holy_sheet.schema.json"

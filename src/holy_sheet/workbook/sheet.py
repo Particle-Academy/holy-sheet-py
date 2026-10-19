@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from .cell import Cell
 from .cell_comment import CellComment
@@ -25,6 +26,11 @@ class Sheet:
     column_widths: dict[int, float] = field(default_factory=dict)
     frozen_rows: int = 0
     frozen_cols: int = 0
+    # 1-based row number -> height in pixels, ascending.
+    row_heights: dict[int, float] = field(default_factory=dict)
+    # {"orientation": str | None, "fitToWidth": bool, "footer": {left, center, right} | None},
+    # or None. Named print_setup because `print` would shadow the builtin.
+    print_setup: dict[str, Any] | None = None
 
     def rows(self) -> dict[int, dict[str, Cell]]:
         """Group cells by 1-based row number: {row: {column letter: Cell}}.

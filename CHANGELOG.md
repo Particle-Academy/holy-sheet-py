@@ -12,6 +12,25 @@ what moved.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-19
+
+### Added
+
+- **`print`** (`orientation`, `fitToWidth`, `footer` with `{page}` / `{pages}`)
+  and **`rowHeights`** (pixels by 1-based row number). Read back, validated and
+  published in the schema. **Nothing to do**: a workbook without them is
+  byte-identical. Same as `particle-academy/holy-sheet` 2.6.0 and
+  `@particle-academy/holy-sheet` 2.7.0; parity holds (`printSetup` fixture).
+
+### Fixed
+
+- **`tool_definition()` served a stale schema.** This port's copy of
+  `holy_sheet.schema.json` had not changed since the port was created and still
+  described "v0.2.0" (7.8 KB against the shared file's 11 KB), so an agent using
+  the Python tool was told about a fraction of what the writer accepts. It is
+  now byte-identical to the PHP and Node copies, as the sync test always
+  claimed it would be.
+
 ## [0.5.0] — 2026-10-11
 
 ### Fixed

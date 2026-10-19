@@ -34,6 +34,25 @@ from .styles_registry import StylesRegistry
 _ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 
 
+def footer_codes(footer: dict[str, str]) -> str:
+    """A footer as Excel's header/footer codes (mirrors PHP ``XlsxWriter::footerCodes``).
+
+    &L / &C / &R open a section, &P is the page number, &N the count, and a
+    literal "&" is written "&&" so it cannot start a code.
+    """
+    codes = ""
+    for slot, code in (("left", "&L"), ("center", "&C"), ("right", "&R")):
+        if footer[slot] != "":
+            codes += code + footer[slot].replace("&", "&&").replace("{pages}", "&N").replace("{page}", "&P")
+    return codes
+
+
+def _decimal(value: float) -> str:
+    """The shortest decimal, as PHP ``number_format($v, 4)`` trimmed: 24.0 -> "24"."""
+    out = php_number_format(value, 4).rstrip("0").rstrip(".")
+    return "0" if out in ("", "-0") else out
+
+
 class XlsxWriter:
     def write(self, workbook: Workbook, path: str) -> None:
         data = self.to_bytes(workbook)
@@ -203,8 +222,13 @@ class XlsxWriter:
                 )
             cols_xml += "</cols>"
 
+        # Rows with cells and rows with only a height, in row order; heights in
+        # points (pixels x 0.75), as Excel stores them.
+        rows = sheet.rows()
+        for row_index in sheet.row_heights:
+            rows.setdefault(row_index, {})
         rows_xml = ""
-        for row_index, row in sheet.rows().items():
+        for row_index, row in sorted(rows.items()):
             cells_xml = ""
             # LEXICOGRAPHIC on the column letter -- so a sheet wider than 26
             # columns emits A, AA, AB, …, B, C. That is neither Excel's
@@ -216,7 +240,13 @@ class XlsxWriter:
             # not in a port.
             for col in sorted(row.keys()):
                 cells_xml += self.cell_xml(row[col], styles)
-            rows_xml += f'<row r="{row_index}">{cells_xml}</row>'
+            height = sheet.row_heights.get(row_index)
+            ht = f' ht="{_decimal(height * 0.75)}" customHeight="1"' if height is not None else ""
+            rows_xml += (
+                f'<row r="{row_index}"{ht}/>'
+                if cells_xml == ""
+                else f'<row r="{row_index}"{ht}>{cells_xml}</row>'
+            )
 
         merges_xml = ""
         if sheet.merged_regions:
@@ -227,14 +257,38 @@ class XlsxWriter:
 
         legacy_drawing = '<legacyDrawing r:id="rId1"/>' if sheet.has_comments() else ""
 
+        # Print setup, in CT_Worksheet order (see the PHP engine).
+        print_setup = sheet.print_setup
+        sheet_pr_xml = (
+            '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+            if print_setup is not None and print_setup["fitToWidth"]
+            else ""
+        )
+        page_setup_xml = ""
+        if print_setup is not None and (print_setup["orientation"] is not None or print_setup["fitToWidth"]):
+            page_setup_xml = (
+                "<pageSetup"
+                + (f' orientation="{print_setup["orientation"]}"' if print_setup["orientation"] is not None else "")
+                + (' fitToWidth="1" fitToHeight="0"' if print_setup["fitToWidth"] else "")
+                + "/>"
+            )
+        header_footer_xml = (
+            f"<headerFooter><oddFooter>{xml_escape(footer_codes(print_setup['footer']))}</oddFooter></headerFooter>"
+            if print_setup is not None and print_setup["footer"] is not None
+            else ""
+        )
+
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
             ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            + sheet_pr_xml
             + sheet_views_xml
             + cols_xml
             + f"<sheetData>{rows_xml}</sheetData>"
             + merges_xml
+            + page_setup_xml
+            + header_footer_xml
             + legacy_drawing
             + "</worksheet>"
         )

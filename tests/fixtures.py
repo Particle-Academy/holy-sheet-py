@@ -154,4 +154,21 @@ SCHEMAS: dict[str, Any] = {
         "meta": META,
         "sheets": [{"name": "Wide", "cells": _wide_cells()}],
     },
+    # Print setup + row heights: a height on a row with no cells, a fractional
+    # height, and a literal "&" in the footer. Same document as the Node port's.
+    "printSetup": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Print",
+                "cells": {"A1": {"value": "Title"}, "B2": {"value": 42}},
+                "rowHeights": {"1": 32, "3": 20.5},
+                "print": {
+                    "orientation": "landscape",
+                    "fitToWidth": True,
+                    "footer": {"left": "Q3 & Q4", "right": "Page {page} of {pages}"},
+                },
+            }
+        ],
+    },
 }

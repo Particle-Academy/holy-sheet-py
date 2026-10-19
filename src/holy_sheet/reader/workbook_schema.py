@@ -44,6 +44,18 @@ def _sheet_to_schema(sheet: Sheet) -> dict[str, Any]:
         out["frozenRows"] = sheet.frozen_rows
     if sheet.frozen_cols > 0:
         out["frozenCols"] = sheet.frozen_cols
+    if sheet.row_heights:
+        # Whole pixels come back as integers, as PHP returns them.
+        out["rowHeights"] = {k: int(v) if float(v).is_integer() else v for k, v in sheet.row_heights.items()}
+    if sheet.print_setup is not None:
+        print_out: dict[str, Any] = {}
+        if sheet.print_setup["orientation"] is not None:
+            print_out["orientation"] = sheet.print_setup["orientation"]
+        if sheet.print_setup["fitToWidth"]:
+            print_out["fitToWidth"] = True
+        if sheet.print_setup["footer"] is not None:
+            print_out["footer"] = {k: v for k, v in sheet.print_setup["footer"].items() if v != ""}
+        out["print"] = print_out
     return out
 
 

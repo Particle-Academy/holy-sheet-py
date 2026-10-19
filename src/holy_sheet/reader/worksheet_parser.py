@@ -36,7 +36,75 @@ class WorksheetParser:
             merged_regions=_parse_merges(root),
             column_widths=_parse_column_widths(root),
             **_parse_frozen(root),
+            row_heights=_parse_row_heights(root),
+            print_setup=_parse_print(root),
         )
+
+
+def _parse_row_heights(root: Element) -> dict[int, float]:
+    """Rows with a CUSTOM height, in pixels (points / 0.75). Mirrors PHP."""
+    out: dict[int, float] = {}
+    for row in find_all(find(root, "sheetData"), "row"):
+        r = int(attr(row, "r") or 0)
+        ht = attr(row, "ht")
+        if r > 0 and ht is not None and attr(row, "customHeight") in ("1", "true"):
+            out[r] = php_round(float(ht) / 0.75, 2)
+    return out
+
+
+def _parse_print(root: Element) -> dict[str, Any] | None:
+    """Print setup: orientation, fit-to-one-page-wide, the odd-page footer. Mirrors PHP."""
+    fit_to_page = attr(find(find(root, "sheetPr"), "pageSetUpPr"), "fitToPage") in ("1", "true")
+    setup = find(root, "pageSetup")
+    orientation = attr(setup, "orientation")
+    orientation = orientation if orientation in ("portrait", "landscape") else None
+    fit = (
+        fit_to_page
+        and setup is not None
+        and attr(setup, "fitToWidth") == "1"
+        and (attr(setup, "fitToHeight") or "") in ("0", "")
+    )
+    odd_footer = find(find(root, "headerFooter"), "oddFooter")
+    footer = parse_footer_codes(text_of(odd_footer)) if odd_footer is not None else None
+    if orientation is None and not fit and footer is None:
+        return None
+    return {"orientation": orientation, "fitToWidth": fit, "footer": footer}
+
+
+def parse_footer_codes(codes: str) -> dict[str, str] | None:
+    """Excel header/footer codes back to three slots. Mirrors PHP, code for code."""
+    slots = {"left": "", "center": "", "right": ""}
+    current = "center"
+    length = len(codes)
+    i = 0
+    while i < length:
+        ch = codes[i]
+        if ch != "&" or i + 1 >= length:
+            slots[current] += ch
+            i += 1
+            continue
+        i += 1
+        nxt = codes[i]
+        if nxt == "&":
+            slots[current] += "&"
+        elif nxt in ("L", "C", "R"):
+            current = {"L": "left", "C": "center", "R": "right"}[nxt]
+        elif nxt == "P":
+            slots[current] += "{page}"
+        elif nxt == "N":
+            slots[current] += "{pages}"
+        elif nxt == '"':
+            close = codes.find('"', i + 1)
+            i = length if close == -1 else close
+        elif "0" <= nxt <= "9":
+            while i + 1 < length and "0" <= codes[i + 1] <= "9":
+                i += 1
+        elif nxt == "K":
+            i = min(length - 1, i + 6)
+        i += 1
+    if slots["left"] == "" and slots["center"] == "" and slots["right"] == "":
+        return None
+    return slots
 
 
 def _parse_cells(

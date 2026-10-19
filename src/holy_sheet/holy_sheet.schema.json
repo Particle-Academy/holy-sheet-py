@@ -2,23 +2,32 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Particle-Academy/holy-sheet/skills/holy-sheet.schema.json",
   "title": "Holy Sheet workbook schema",
-  "description": "Input format for HolySheet\\Agent::write(). Describes a multi-sheet xlsx workbook agentically. v0.2.0 supports scalar values, formulas (cached), and multiple sheets. Styles, formats, comments, merges land in subsequent minors.",
+  "description": "Input format for HolySheet\\Agent::write(). Describes a multi-sheet xlsx workbook agentically. Everything in this schema is SUPPORTED NOW: values, formulas, per-column types and number formats, per-cell styling, themes, merges, frozen panes, column widths, totals and comments. A workbook is judged by how it READS, not only by whether the numbers are right — money should render as money and a header row should look like one, so prefer a typed column over a raw number and set the presentation the document needs.",
   "type": "object",
-  "required": ["sheets"],
+  "required": [
+    "sheets"
+  ],
   "additionalProperties": false,
   "properties": {
     "sheets": {
       "type": "array",
       "minItems": 1,
       "description": "One or more sheets. The first sheet is shown when the file opens.",
-      "items": { "$ref": "#/definitions/Sheet" }
+      "items": {
+        "$ref": "#/definitions/Sheet"
+      }
     },
     "meta": {
       "type": "object",
       "description": "Optional workbook metadata surfaced in Excel's File → Info pane.",
       "properties": {
-        "creator": { "type": "string" },
-        "created": { "type": "string", "description": "ISO-8601 datetime. Defaults to now()." }
+        "creator": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string",
+          "description": "ISO-8601 datetime. Defaults to now()."
+        }
       },
       "additionalProperties": true
     }
@@ -26,11 +35,24 @@
   "definitions": {
     "Sheet": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "additionalProperties": false,
       "oneOf": [
-        { "required": ["columns", "rows"], "description": "Row-oriented (agent-ergonomic)." },
-        { "required": ["cells"], "description": "Sparse A1-keyed map (fancy-sheets passthrough)." }
+        {
+          "required": [
+            "columns",
+            "rows"
+          ],
+          "description": "Row-oriented (agent-ergonomic)."
+        },
+        {
+          "required": [
+            "cells"
+          ],
+          "description": "Sparse A1-keyed map (fancy-sheets passthrough)."
+        }
       ],
       "properties": {
         "name": {
@@ -41,7 +63,9 @@
         },
         "columns": {
           "type": "array",
-          "items": { "$ref": "#/definitions/Column" },
+          "items": {
+            "$ref": "#/definitions/Column"
+          },
           "description": "When present, the first row is the header row. Column types are applied to every row in that column."
         },
         "rows": {
@@ -49,89 +73,180 @@
           "items": {
             "type": "array",
             "description": "One row of cell values, in column order. Use null for missing values.",
-            "items": { "$ref": "#/definitions/CellValue" }
+            "items": {
+              "$ref": "#/definitions/CellValue"
+            }
           }
         },
         "cells": {
           "type": "object",
-          "description": "Sparse A1-keyed map. Use this shape when exporting from <Spreadsheet>.",
-          "additionalProperties": { "$ref": "#/definitions/CellData" },
+          "description": "Sparse cells keyed by A1 address, for anything the row/column model does not cover — a title band, a callout, a note. May be used ALONGSIDE columns/rows: the explicit cell wins at its address and inherits that column's format for anything it does not set.",
+          "additionalProperties": {
+            "$ref": "#/definitions/CellData"
+          },
           "patternProperties": {
-            "^[A-Z]+[1-9][0-9]*$": { "$ref": "#/definitions/CellData" }
+            "^[A-Z]+[1-9][0-9]*$": {
+              "$ref": "#/definitions/CellData"
+            }
           }
         },
         "totals": {
           "type": "object",
-          "description": "Symbolic aggregations appended below the data. Key = column header; value = aggregation. Lands in 0.7.",
+          "description": "Symbolic aggregations appended below the data. Key = column header; value = one of sum, avg, count, min, max. These become real FORMULAS, so a total updates when a figure above it is edited — a row of typed numbers looks identical and is wrong the moment anyone changes anything.",
           "additionalProperties": {
             "type": "string",
-            "enum": ["sum", "avg", "count", "min", "max"]
+            "enum": [
+              "sum",
+              "avg",
+              "count",
+              "min",
+              "max"
+            ]
           }
         },
         "theme": {
           "type": "string",
-          "enum": ["default", "minimal", "plain", "business"],
+          "enum": [
+            "default",
+            "minimal",
+            "plain",
+            "business"
+          ],
           "default": "default",
-          "description": "Pre-baked style preset. Lands in 0.3."
+          "description": "Pre-baked style preset applied to headers, banding and totals. The cheapest way to make a sheet look deliberate: set it unless you are styling every cell yourself."
         },
         "mergedRegions": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["start", "end"],
+            "required": [
+              "start",
+              "end"
+            ],
             "properties": {
-              "start": { "type": "string", "description": "A1 ref of top-left." },
-              "end": { "type": "string", "description": "A1 ref of bottom-right." }
+              "start": {
+                "type": "string",
+                "description": "A1 ref of top-left."
+              },
+              "end": {
+                "type": "string",
+                "description": "A1 ref of bottom-right."
+              }
             }
           },
-          "description": "Cells to merge. Lands in 0.5."
+          "description": "Cells to merge, as [{start, end}] — e.g. [{\"start\": \"A1\", \"end\": \"D1\"}]. Use it for a title band spanning the table."
         },
         "columnWidths": {
           "type": "object",
-          "description": "Override widths in pixels. Keys are 0-based column indexes. Lands in 0.5.",
+          "description": "Override widths in pixels. Keys are 0-based column indexes. Set these when a header or a formatted number would otherwise be cut off or shown as ####.",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "frozenRows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many rows stay visible while the sheet scrolls. Set to 1 whenever there is a header row, so the reader can still see what the columns are further down."
+        },
+        "frozenCols": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many columns stay visible while the sheet scrolls sideways. Set to 1 when the first column is the label for the row."
+        },
+        "rowHeights": {
+          "type": "object",
+          "description": "Row heights in pixels, keyed by 1-based row NUMBER as Excel shows it: {\"1\": 32, \"4\": 28}. A default row is 20; give a title row or a header row room (28-36) instead of packing text against its fill.",
+          "propertyNames": { "pattern": "^[1-9][0-9]*$" },
           "additionalProperties": { "type": "number", "minimum": 0 }
         },
-        "frozenRows": { "type": "integer", "minimum": 0, "description": "Lands in 0.5." },
-        "frozenCols": { "type": "integer", "minimum": 0, "description": "Lands in 0.5." }
+        "print": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How the sheet prints. A sheet wider than a page splits its columns across pages unless fitToWidth is set.",
+          "properties": {
+            "orientation": { "type": "string", "enum": ["portrait", "landscape"] },
+            "fitToWidth": { "type": "boolean", "description": "Scale the sheet to one page wide (as many pages tall as it needs)." },
+            "footer": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "A printed footer: up to three slots. {page} and {pages} print the page number and count: {\"left\": \"Q3 Revenue Review\", \"right\": \"Page {page} of {pages}\"}.",
+              "properties": {
+                "left": { "type": "string" },
+                "center": { "type": "string" },
+                "right": { "type": "string" }
+              }
+            }
+          }
+        }
       }
     },
     "Column": {
       "type": "object",
-      "required": ["header"],
+      "required": [
+        "header"
+      ],
       "additionalProperties": false,
       "properties": {
-        "header": { "type": "string" },
+        "header": {
+          "type": "string"
+        },
         "type": {
           "type": "string",
-          "enum": ["auto", "string", "number", "integer", "boolean", "date", "datetime", "currency", "percent", "formula"],
+          "enum": [
+            "auto",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "date",
+            "datetime",
+            "currency",
+            "percent",
+            "formula"
+          ],
           "default": "auto",
-          "description": "Cell type applied to every value in this column. 'auto' infers per cell."
+          "description": "Cell type applied to every value in this column, and the main thing deciding whether the sheet reads as a document or as a dump. Use 'currency' for money, 'percent' for rates and 'date' for dates — 'auto' infers a plain number and leaves 1250000.5 looking like 1250000.5."
         },
         "currency": {
           "type": "string",
-          "description": "ISO-4217 code (USD, EUR, JPY, ...) when type=currency. Defaults to config('holy-sheet.locale')."
+          "description": "ISO currency code for a 'currency' column, e.g. USD. Pair it with decimals: 2."
         },
         "decimals": {
           "type": "integer",
           "minimum": 0,
           "maximum": 10,
-          "description": "Display decimals for number/currency/percent. Default 2 for currency, 1 for percent, 0 for integer, none for number."
+          "description": "Decimal places for a numeric, currency or percent column. Money is normally 2; a growth rate is normally 1."
         },
         "format": {
           "type": "string",
           "description": "Custom Excel number format string. Overrides type-derived format. Power-user escape hatch."
         },
-        "width": { "type": "number", "minimum": 0, "description": "Column width in pixels. Same as columnWidths but per-column." }
+        "width": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Column width in pixels. Same as columnWidths but per-column."
+        }
       }
     },
     "CellValue": {
       "description": "A primitive value, null, or an object {value, formula, format, comment} for per-cell control.",
       "oneOf": [
-        { "type": "string" },
-        { "type": "number" },
-        { "type": "boolean" },
-        { "type": "null" },
-        { "$ref": "#/definitions/CellData" }
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/definitions/CellData"
+        }
       ]
     },
     "CellData": {
@@ -141,10 +256,18 @@
         "value": {
           "description": "Raw cell value.",
           "oneOf": [
-            { "type": "string" },
-            { "type": "number" },
-            { "type": "boolean" },
-            { "type": "null" }
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "formula": {
@@ -153,43 +276,110 @@
         },
         "computedValue": {
           "description": "Cached value from a previous evaluation. When present, Excel shows it without recomputing on open.",
-          "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "format": { "$ref": "#/definitions/CellFormat" },
-        "comment": { "$ref": "#/definitions/CellComment" }
+        "format": {
+          "$ref": "#/definitions/CellFormat"
+        },
+        "comment": {
+          "$ref": "#/definitions/CellComment"
+        }
       }
     },
     "CellFormat": {
       "type": "object",
-      "description": "Per-cell format. Lands in 0.3.",
+      "description": "Per-cell presentation: bold, italic, font size, text and background colour, alignment, borders and number format. Use it for the things a column type cannot express — a title band, a highlighted figure, a ruled callout.",
       "additionalProperties": false,
       "properties": {
-        "bold": { "type": "boolean" },
-        "italic": { "type": "boolean" },
-        "textAlign": { "type": "string", "enum": ["left", "center", "right"] },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "textAlign": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
         "displayFormat": {
           "type": "string",
-          "enum": ["auto", "text", "number", "date", "datetime", "percentage", "currency"]
+          "enum": [
+            "auto",
+            "text",
+            "number",
+            "date",
+            "datetime",
+            "percentage",
+            "currency"
+          ]
         },
-        "decimals": { "type": "integer", "minimum": 0, "maximum": 10 },
-        "color": { "type": "string", "description": "Hex color (#RRGGBB) for text." },
-        "backgroundColor": { "type": "string", "description": "Hex color for cell fill." },
-        "fontSize": { "type": "integer", "minimum": 6, "maximum": 72 },
-        "borderTop": { "type": "string" },
-        "borderRight": { "type": "string" },
-        "borderBottom": { "type": "string" },
-        "borderLeft": { "type": "string" }
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex color (#RRGGBB) for text."
+        },
+        "backgroundColor": {
+          "type": "string",
+          "description": "Hex color for cell fill."
+        },
+        "fontSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 72
+        },
+        "borderTop": {
+          "type": "string"
+        },
+        "borderRight": {
+          "type": "string"
+        },
+        "borderBottom": {
+          "type": "string"
+        },
+        "borderLeft": {
+          "type": "string"
+        }
       }
     },
     "CellComment": {
       "type": "object",
-      "description": "Lands in 0.6.",
-      "required": ["text"],
+      "description": "A reviewer note attached to a cell. Accepts a plain string, or an object with text/author/color.",
+      "required": [
+        "text"
+      ],
       "additionalProperties": false,
       "properties": {
-        "text": { "type": "string" },
-        "author": { "type": "string" },
-        "color": { "type": "string", "description": "Hex color for the corner triangle indicator." }
+        "text": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex color for the corner triangle indicator."
+        }
       }
     }
   }

@@ -8,6 +8,7 @@ writer downstream is deliberately dumb.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Any
 
@@ -52,6 +53,8 @@ class Normalizer:
                 column_widths=self._normalize_widths(sheet),
                 frozen_rows=int(sheet.get("frozenRows") or 0),
                 frozen_cols=int(sheet.get("frozenCols") or 0),
+                row_heights=normalize_row_heights(sheet.get("rowHeights")),
+                print_setup=normalize_print(sheet.get("print")),
             )
 
         cells: dict[str, Cell] = {}
@@ -130,6 +133,8 @@ class Normalizer:
             column_widths=self._normalize_widths(sheet),
             frozen_rows=int(sheet.get("frozenRows") or 0),
             frozen_cols=int(sheet.get("frozenCols") or 0),
+            row_heights=normalize_row_heights(sheet.get("rowHeights")),
+            print_setup=normalize_print(sheet.get("print")),
         )
 
     def _normalize_cell_map(self, cell_map: Any, sheet_name: str | None = None) -> dict[str, Cell]:
@@ -398,6 +403,51 @@ class Normalizer:
             )
 
         return value
+
+
+_ROW_NUMBER = re.compile(r"^[1-9][0-9]{0,6}$")
+
+
+def _php_numeric(value: Any) -> float | None:
+    """PHP ``is_numeric`` then ``(float)``: bool is NOT numeric (check it first)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if is_numeric_string(value):
+        return float(numeric_string_to_number(value))
+    return None
+
+
+def normalize_row_heights(heights: Any) -> dict[int, float]:
+    """``rowHeights``: 1-based row number -> pixels, ascending. Mirrors PHP."""
+    if not isinstance(heights, (dict, list)):
+        return {}
+    items = heights.items() if isinstance(heights, dict) else enumerate(heights)
+    out: dict[int, float] = {}
+    for row, px in items:
+        n = _php_numeric(px)
+        if _ROW_NUMBER.match(str(row)) and n is not None and n >= 0:
+            out[int(str(row))] = n
+    return dict(sorted(out.items()))
+
+
+def normalize_print(print_spec: Any) -> dict[str, Any] | None:
+    """``print``, normalised; None when it asks for nothing. Mirrors PHP."""
+    if not isinstance(print_spec, dict):
+        return None
+    orientation = print_spec.get("orientation")
+    orientation = orientation if orientation in ("portrait", "landscape") else None
+    fit = print_spec.get("fitToWidth") is True
+    footer = None
+    raw = print_spec.get("footer")
+    if isinstance(raw, dict):
+        footer = {k: raw[k] if isinstance(raw.get(k), str) else "" for k in ("left", "center", "right")}
+        if footer["left"] == "" and footer["center"] == "" and footer["right"] == "":
+            footer = None
+    if orientation is None and not fit and footer is None:
+        return None
+    return {"orientation": orientation, "fitToWidth": fit, "footer": footer}
 
 
 def _comment_from(data: Any) -> CellComment | None:

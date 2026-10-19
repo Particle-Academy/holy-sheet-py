@@ -13,12 +13,15 @@ not this module's engine.)
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..exceptions import SchemaException
-from ..helpers.php import entries, is_array, is_list, type_of
+from ..helpers.php import entries, is_array, is_list, is_numeric_string, numeric_string_to_number, type_of
 from . import column_widths
 from .repairer import Repairer
+
+_ROW_NUMBER = re.compile(r"^[1-9][0-9]{0,6}$")
 
 _ALLOWED_COLUMN_TYPES = [
     "auto",
@@ -268,6 +271,51 @@ class Validator:
                                 "A width is a number of pixels, like 120.",
                             )
                         )
+
+        # Mirrors PHP Validator, path and message for path and message.
+        heights = _get(sheet, "rowHeights")
+        if heights is not None:
+            if not is_array(heights):
+                errors.append(_error(f"{path}.rowHeights", "object keyed by 1-based row number", type_of(heights), heights,
+                                     'Row heights map a row NUMBER to pixels: {"1": 32, "4": 28}.'))
+            else:
+                for row, px in entries(heights):
+                    numeric = (
+                        not isinstance(px, bool)
+                        and (isinstance(px, (int, float)) or is_numeric_string(px))
+                    )
+                    if not _ROW_NUMBER.match(str(row)):
+                        errors.append(_error(f"{path}.rowHeights.{row}", "a 1-based row number", type_of(row), row,
+                                             'Keys are row numbers as Excel shows them: "1" is the first row.'))
+                    elif not numeric or float(numeric_string_to_number(px) if isinstance(px, str) else px) < 0:
+                        errors.append(_error(f"{path}.rowHeights.{row}", "a non-negative number of pixels", type_of(px), px,
+                                             "A height is a number of pixels, like 28 (20 is a default row)."))
+
+        print_spec = _get(sheet, "print")
+        if print_spec is not None:
+            if not is_array(print_spec):
+                errors.append(_error(f"{path}.print", "object {orientation?, fitToWidth?, footer?}", type_of(print_spec), print_spec,
+                                     'Print setup: {"orientation": "landscape", "fitToWidth": true, "footer": {"right": "Page {page} of {pages}"}}.'))
+            else:
+                orientation = _get(print_spec, "orientation")
+                if orientation is not None and orientation not in ("portrait", "landscape"):
+                    errors.append(_error(f"{path}.print.orientation", "one of: portrait, landscape", type_of(orientation), orientation,
+                                         "Use landscape for a sheet wider than it is tall."))
+                fit = _get(print_spec, "fitToWidth")
+                if fit is not None and not isinstance(fit, bool):
+                    errors.append(_error(f"{path}.print.fitToWidth", "boolean", type_of(fit), fit,
+                                         "true scales the sheet to one page wide when printed."))
+                footer = _get(print_spec, "footer")
+                if footer is not None:
+                    if not is_array(footer):
+                        errors.append(_error(f"{path}.print.footer", "object {left?, center?, right?}", type_of(footer), footer,
+                                             "A footer has up to three slots of text."))
+                    else:
+                        for slot in ("left", "center", "right"):
+                            value = _get(footer, slot)
+                            if value is not None and not isinstance(value, str):
+                                errors.append(_error(f"{path}.print.footer.{slot}", "string", type_of(value), value,
+                                                     "Footer text; {page} and {pages} print the page number and count."))
 
         return errors
 
