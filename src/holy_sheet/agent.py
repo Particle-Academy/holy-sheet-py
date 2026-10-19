@@ -255,3 +255,11 @@ def equivalent(a: Any, b: Any) -> bool:
     cell map it becomes are equivalent, and so are a schema without
     `meta.created` and its written copy."""
     return SheetDiff.equivalent(a, b)
+
+
+def guide() -> str:
+    """The agent guide: what makes this kind of file professional, and the schema
+    idioms that produce it. Give it to a model with the schema; it works with any
+    agent loop. Byte-identical to the PHP package's agent-guide/professional-workbooks.md
+    (tests/test_agent_guide.py pins the hash)."""
+    return resources.files(__package__).joinpath("agent_guide.md").read_text("utf-8")

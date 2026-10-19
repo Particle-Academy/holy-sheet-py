@@ -41,6 +41,7 @@ from .agent import (
     tool_definition,
     validate,
     validate_and_repair,
+    guide,
     version,
     write,
 )
@@ -82,6 +83,7 @@ __all__ = [
     "tool_definition",
     "validate",
     "validate_and_repair",
+    "guide",
     "version",
     "write",
     # Errors.
