@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-27
+
 ### Fixed
 
 - **An explicit `{"value": <string>}` cell is now written as a string,
