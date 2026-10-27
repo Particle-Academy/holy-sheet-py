@@ -12,6 +12,25 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An explicit `{"value": <string>}` cell is now written as a string,
+  exactly as given**, matching PHP holy-sheet and holy-sheet-js.
+  Numeric-string coercion used to run on the object form too, so
+  `{"value": "+1"}` was written as the number 1, `{"value": "007"}` as 7 and
+  `{"value": "1e5"}` as 100000: a phone prefix, zip code or part number lost
+  its characters with no error. This applies in `rows` and in the sparse
+  `cells` map, under any column type or number format, and to a `set_cell`
+  op's `value`. Unchanged: a BARE string in a row or a `cells` entry is still
+  coerced (`"+1"` is still 1) and a bare `"=..."` is still a formula; an
+  object value that is already a number is still a number; and a string under
+  a `date` / `datetime` display format is still converted to a date serial.
+  `read()` returns such a cell as the same string. A new `explicitStrings`
+  parity fixture compares the parts with the PHP engine.
+  **What a consumer must do:** if you relied on `{"value": "100"}` becoming a
+  number, pass the number (`{"value": 100}`) or the bare string (`"100"`).
+  Otherwise nothing.
+
 ## [0.10.0] - 2026-10-27
 
 ### Added

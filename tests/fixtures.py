@@ -60,6 +60,35 @@ SCHEMAS: dict[str, Any] = {
     # holds two exact ties at the 14th decimal (j/2**15 is the only shape of
     # double whose decimal expansion terminates in a 5 there), so a half-even
     # formatter fails this fixture instead of shipping.
+    # An explicit `{value: <string>}` cell is text exactly as given; the same
+    # strings bare in the next row are still coerced. Mirrored in
+    # holy-sheet-js's parity suite.
+    "explicitStrings": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Explicit",
+                "columns": [
+                    {"header": "Explicit"},
+                    {"header": "Number"},
+                    {"header": "Currency", "type": "currency"},
+                ],
+                "rows": [
+                    [{"value": "+1"}, {"value": "007"}, {"value": "1e5", "format": {"bold": True}}],
+                    ["+1", "007", "1e5"],
+                ],
+            },
+            {
+                "name": "Sparse",
+                "cells": {
+                    "E1": {"value": "-0"},
+                    "E2": {"value": "1.50"},
+                    "E3": {"value": "=1+1"},
+                    "E4": {"value": 42},
+                },
+            }
+        ],
+    },
     "numericHazards": {
         "meta": META,
         "sheets": [

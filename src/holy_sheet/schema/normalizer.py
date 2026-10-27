@@ -170,7 +170,9 @@ class Normalizer:
 
             cells[address] = Cell(
                 address=address,
-                value=self._coerce_value(cell_data.get("value"), fmt, address, sheet_name),
+                value=self._coerce_value(
+                    cell_data.get("value"), fmt, address, sheet_name, explicit=True
+                ),
                 formula=cell_data.get("formula"),
                 format=fmt,
                 comment=comment,
@@ -289,7 +291,9 @@ class Normalizer:
             comment = _comment_from(value.get("comment"))
             return Cell(
                 address=address,
-                value=self._coerce_value(value.get("value"), merged, address, sheet_name),
+                value=self._coerce_value(
+                    value.get("value"), merged, address, sheet_name, explicit=True
+                ),
                 formula=value.get("formula"),
                 format=merged,
                 comment=comment,
@@ -325,7 +329,17 @@ class Normalizer:
         fmt: CellFormat | None,
         address: str = "?",
         sheet_name: str | None = None,
+        explicit: bool = False,
     ) -> Any:
+        """``explicit``: the value came from an object cell's ``value`` key.
+
+        An explicit string is the caller saying "this text, exactly", so it is
+        never coerced to a number: ``{"value": "+1"}`` stays "+1" and
+        ``{"value": "007"}`` stays "007". Only a date/datetime display format
+        still turns a string into a serial, because that conversion is what the
+        format asks for. Bare values keep numeric-string coercion. Mirrors PHP
+        ``Normalizer::coerceValue``.
+        """
         if value is None:
             return None
 
@@ -335,6 +349,9 @@ class Normalizer:
                 isinstance(value, str) and value.strip() != ""
             ):
                 return DateConverter.to_serial(value, display == "datetime")
+
+        if explicit and isinstance(value, str):
+            return value
 
         # `bool` is checked implicitly by is_numeric_string, which rejects it --
         # otherwise `True` would be "numeric" and land in a numeric cell.
