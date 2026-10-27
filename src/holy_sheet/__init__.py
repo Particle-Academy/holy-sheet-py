@@ -28,6 +28,7 @@ the model is the product.
 from .agent import (
     FEATURE_BASELINE,
     VERSION,
+    convert_template,
     describe,
     diff,
     equivalent,
@@ -45,7 +46,7 @@ from .agent import (
     version,
     write,
 )
-from .exceptions import SchemaException, UnsupportedFormatException
+from .exceptions import ArchiveRefused, OfficeTemplateRefused, SchemaException, UnsupportedFormatException
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
 from .ops import SheetDiff, SheetOpSchema, SheetReducer
@@ -70,6 +71,7 @@ __version__ = VERSION
 __all__ = [
     "__version__",
     # Agent surface.
+    "convert_template",
     "describe",
     "diff",
     "equivalent",
@@ -87,6 +89,8 @@ __all__ = [
     "version",
     "write",
     # Errors.
+    "ArchiveRefused",
+    "OfficeTemplateRefused",
     "SchemaException",
     "UnsupportedFormatException",
     # Lower-level building blocks, peer-named for cross-runtime familiarity.

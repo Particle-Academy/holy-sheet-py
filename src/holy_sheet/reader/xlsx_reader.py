@@ -1,6 +1,6 @@
 """The read path: an OOXML package -> a Holy Sheet schema.
 
-Walks the container with `zipfile`, parses parts in dependency order (rels ->
+Walks the container through the bounded `SourceArchive` guard, parses parts in dependency order (rels ->
 styles -> shared strings -> comments -> worksheets), and assembles a `Workbook`
 that mirrors what `Normalizer` would have produced from the equivalent input.
 `describe()` then turns that back into a schema which is feed-it-to-write
@@ -15,11 +15,10 @@ parity with PHP.
 
 from __future__ import annotations
 
-import io
-import zipfile
 from typing import Any
 
-from ..exceptions import UnsupportedFormatException
+from ..archive.office_template import source_kind
+from ..archive.source_archive import SourceArchive, open_for_reading
 from ..workbook.cell_comment import CellComment
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
@@ -38,10 +37,8 @@ class XlsxReader:
         return WorkbookSchema.from_workbook(self.read_workbook(data))
 
     def read_workbook(self, data: bytes) -> Workbook:
-        try:
-            archive = zipfile.ZipFile(io.BytesIO(data))
-        except zipfile.BadZipFile as error:
-            raise UnsupportedFormatException.not_a_zip() from error
+        archive = open_for_reading(data)
+        kind = source_kind(archive)
 
         with archive:
             styles_index = StylesParser.parse(_read(archive, "xl/styles.xml"))
@@ -118,7 +115,7 @@ class XlsxReader:
 
             meta = _parse_doc_props(_read(archive, "docProps/core.xml"))
 
-        return Workbook(sheets=sheets, meta=meta)
+        return Workbook(sheets=sheets, meta=meta, source_kind=kind)
 
 
 def _parse_doc_props(core_xml: bytes | None) -> dict[str, Any]:
@@ -135,11 +132,8 @@ def _parse_doc_props(core_xml: bytes | None) -> dict[str, Any]:
     return meta
 
 
-def _read(archive: zipfile.ZipFile, name: str) -> bytes | None:
-    try:
-        return archive.read(name)
-    except KeyError:
-        return None
+def _read(archive: SourceArchive, name: str) -> bytes | None:
+    return archive.read(name)
 
 
 def _resolve_relative_path(base: str, target: str) -> str:

@@ -35,6 +35,9 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
+[project.scripts]
+holy-sheet = "holy_sheet.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/Particle-Academy/holy-sheet-py"
 Repository = "https://github.com/Particle-Academy/holy-sheet-py"

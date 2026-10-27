@@ -12,6 +12,48 @@ what moved.
 
 ## [Unreleased]
 
+### Added
+
+- **Excel `.xltx` templates read, and `.ots` templates marked.** `read()` /
+  `describe()` read an `.xltx` exactly as its `.xlsx` twin and add
+  `"sourceKind": "template"`; an `.ots` (already read, unmarked) now says so
+  too. `Workbook` gains `source_kind` (default `"document"`). Document reads are
+  unchanged and carry no `sourceKind` key, so nothing to do unless you want to
+  tell the two apart. Mirrors PHP and Node holy-sheet.
+- **`holy_sheet.convert_template(data_or_path, to=None)`**, the `holy-sheet`
+  console script and `python -m holy_sheet`: `template:convert <in> <out>
+  [--to=document|template] [--force]` turns a template into its workbook twin
+  and back. Only the declaration is rewritten: the workbook part's content-type
+  value (OOXML), or the `mimetype` entry plus the manifest root's `media-type`
+  (ODF 1.3 Part 2 section 3.3 requires them to agree). Every other zip member is
+  copied as its original record, byte for byte; `mimetype` stays first and
+  stored.
+- `ArchiveRefused` and `OfficeTemplateRefused`, each with a constant `reason`.
+
+### Changed
+
+- **A macro-enabled template (`.xltm`) is now refused** with
+  `OfficeTemplateRefused("macro_enabled")`; it used to be read as a workbook
+  with its VBA silently ignored. So is an `.xltx` carrying a `vbaProject.bin`.
+  An `.xlsm` still reads as before but is never converted.
+- A package that declares a template of another family is refused with
+  `family_mismatch` instead of being read as whatever its parts looked like.
+
+### Security
+
+- **Reads now pass the bounded archive guard PHP and Node already ran.** Every
+  reader here opened uploads with a bare `zipfile.ZipFile` and inflated whatever
+  the central directory declared: no ceiling on a part, the total or the
+  compression ratio, and no refusal of unsafe or duplicate member names. They
+  now go through `SourceArchive`, a stdlib-only port of PHP's validation: 64 MiB
+  archive / part, 256 MiB expanded, 16,384 entries, 1000:1 ratio, coherent local
+  and central records, CRC and exact sizes, bounded inflation. Refusals raise
+  `ArchiveRefused` (a `RuntimeError`) with the same `reason` codes as PHP and
+  Node. **What to do:** nothing for a well-formed workbook. Bytes that are not a
+  zip still raise `UnsupportedFormatException`; a damaged zip that used to raise
+  that (via `BadZipFile`) now raises `ArchiveRefused("archive_corrupt")`, as it
+  does in PHP and Node, so catch `RuntimeError` if you caught both.
+
 ## [0.9.1] — 2026-10-19
 
 ### Fixed

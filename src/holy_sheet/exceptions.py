@@ -42,6 +42,51 @@ def _summarize(errors: list[dict[str, Any]]) -> str:
     )
 
 
+class ArchiveRefused(RuntimeError):
+    """Bounded archive/security refusal with a constant `reason`; carries no
+    member names or document content. Mirrors PHP and Node `ArchiveRefused`.
+
+    Reasons: `archive_corrupt`, `archive_unsupported`, `archive_path`,
+    `archive_duplicate`, `archive_limit`, `archive_limits`.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Source archive refused: {reason}")
+
+
+_TEMPLATE_MESSAGES = {
+    "macro_enabled": "Macro-enabled templates (.xltm) are refused: re-save it as an .xltx in Excel.",
+    "family_mismatch": "This package declares a template of a different kind than its contents.",
+    "already_template": "This package is already a template.",
+    "already_document": "This package is already a document.",
+    "not_convertible": "This package has no single content-type declaration that can be rewritten.",
+    "odf_mimetype": "An OpenDocument package must store its mimetype entry first and uncompressed.",
+    "bad_target": 'The conversion target must be "document" or "template".',
+}
+
+
+class OfficeTemplateRefused(RuntimeError):
+    """An Office or LibreOffice template package refused, with a constant
+    `reason`. Mirrors PHP and Node `OfficeTemplateRefused`:
+
+    - `macro_enabled`   an .xltm (or a template carrying a VBA project). Never
+                        read and never converted.
+    - `family_mismatch` it declares a template of another family, or its parts
+                        are not the family it declares.
+    - `already_template` / `already_document`  conversion asked for what it is.
+    - `not_convertible` there is no single declaration that can be rewritten.
+    - `odf_mimetype`    an ODF package whose `mimetype` is not first and stored.
+    - `bad_target`      the conversion target is not `document` or `template`.
+
+    Branch on `reason`; the message is for people.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Template refused ({reason}): {_TEMPLATE_MESSAGES.get(reason, reason)}")
+
+
 class UnsupportedFormatException(RuntimeError):
     """Raised by `read()` / `describe()` for a file that is neither an xlsx
     workbook nor an OpenDocument spreadsheet. Mirrors PHP

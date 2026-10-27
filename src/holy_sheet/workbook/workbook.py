@@ -18,3 +18,6 @@ from .sheet import Sheet
 class Workbook:
     sheets: list[Sheet] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
+    #: What a reader found: an .xltx / .ots reads exactly like its .xlsx / .ods
+    #: twin and is marked "template".
+    source_kind: str = "document"

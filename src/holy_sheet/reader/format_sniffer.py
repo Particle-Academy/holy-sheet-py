@@ -7,9 +7,7 @@ Mirrors PHP `Reader\\FormatSniffer`. An OpenDocument package names itself in its
 
 from __future__ import annotations
 
-import io
-import zipfile
-
+from ..archive.source_archive import open_for_reading
 from ..exceptions import UnsupportedFormatException
 from .ods.ns import php_trim
 
@@ -31,16 +29,12 @@ class FormatSniffer:
 
     @staticmethod
     def sniff(data: bytes, path: str | None = None) -> str:
-        try:
-            archive = zipfile.ZipFile(io.BytesIO(data))
-        except zipfile.BadZipFile as error:
-            raise UnsupportedFormatException.not_a_zip(path) from error
+        archive = open_for_reading(data, path)
 
         with archive:
-            names = set(archive.namelist())
-            mimetype = (
-                php_trim(archive.read("mimetype").decode("utf-8", "replace")) if "mimetype" in names else None
-            )
+            names = set(archive.names())
+            raw = archive.read("mimetype")
+            mimetype = php_trim(raw.decode("utf-8", "replace")) if raw is not None else None
             if mimetype is not None and mimetype in _ODS_MIMETYPES:
                 return ODS
             if "xl/workbook.xml" in names:

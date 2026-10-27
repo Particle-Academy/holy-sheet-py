@@ -161,6 +161,36 @@ JSON with string keys.
 `Agent::diff`**, so a history written by a Laravel app replays here and the
 other way round. The parity suite runs the PHP package and compares op lists.
 
+### Excel and LibreOffice templates (.xltx, .ots)
+
+An `.xltx` is an `.xlsx` whose workbook part is declared a template; an `.ots`
+is an `.ods` whose `mimetype` (and manifest root entry) says
+`spreadsheet-template`. `read()` / `describe()` read both exactly as their twins
+and add `"sourceKind": "template"` (also `Workbook.source_kind` from
+`read_workbook()`). A document read has no `sourceKind` key, as before.
+
+```python
+holy_sheet.read(xltx_bytes)              # {..., "sourceKind": "template"}
+holy_sheet.convert_template("b.xltx")    # .xlsx bytes ("document" | "template" | None = flip)
+```
+
+```
+holy-sheet template:convert budget.xltx budget.xlsx
+python -m holy_sheet template:convert budget.ods budget.ots --to=template
+```
+
+Conversion rewrites only the declaration: the content-type value in
+`[Content_Types].xml`, or the ODF `mimetype` entry plus the manifest's root
+`media-type` (ODF 1.3 requires the two to match). Every other member is copied
+as its original zip record, byte for byte; `mimetype` stays first and stored.
+Refused with `OfficeTemplateRefused` (a constant `reason`): macro-enabled
+`.xltm` (`macro_enabled`; an `.xlsm` is never converted either) and a package
+declaring a template of another family (`family_mismatch`).
+
+Every read and conversion first passes the bounded archive guard PHP and Node
+run: unsafe, duplicate or oversized members, ratio bombs, encryption, zip64 and
+corrupt records raise `ArchiveRefused` with a constant `reason`.
+
 ## Moving between runtimes
 
 The schema does not change. Only the call shape does.

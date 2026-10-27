@@ -25,6 +25,9 @@ class WorkbookSchema:
         schema: dict[str, Any] = {"sheets": [_sheet_to_schema(sheet) for sheet in workbook.sheets]}
         if workbook.meta:
             schema["meta"] = workbook.meta
+        # Only templates say so; a document read is unchanged.
+        if workbook.source_kind == "template":
+            schema["sourceKind"] = "template"
         return schema
 
 

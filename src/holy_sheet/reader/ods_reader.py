@@ -7,15 +7,14 @@ Takes BYTES, like `XlsxReader`.
 
 from __future__ import annotations
 
-import io
 import re
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from xml.etree.ElementTree import Element
 
-from ..exceptions import UnsupportedFormatException
+from ..archive.office_template import source_kind
+from ..archive.source_archive import SourceArchive, open_for_reading
 from ..helpers.php import php_round
 from ..workbook.cell import Cell
 from ..workbook.cell_address import CellAddress
@@ -71,10 +70,8 @@ class OdsReader:
         return WorkbookSchema.from_workbook(self.read_workbook(data))
 
     def read_workbook(self, data: bytes) -> Workbook:
-        try:
-            archive = zipfile.ZipFile(io.BytesIO(data))
-        except zipfile.BadZipFile as error:
-            raise UnsupportedFormatException.not_a_zip() from error
+        archive = open_for_reading(data)
+        kind = source_kind(archive)
 
         with archive:
             content = _read(archive, "content.xml")
@@ -95,7 +92,7 @@ class OdsReader:
             if ns.local(table) == "table":
                 sheets.append(self._read_sheet(table, style_index))
 
-        return Workbook(sheets=sheets, meta=_read_meta(meta) if meta is not None else {})
+        return Workbook(sheets=sheets, meta=_read_meta(meta) if meta is not None else {}, source_kind=kind)
 
     def _read_sheet(self, table: Element, styles: OdsStyles) -> Sheet:
         columns: list[tuple[int, int, str]] = []
@@ -394,8 +391,5 @@ def _read_meta(xml: bytes) -> dict[str, Any]:
     return out
 
 
-def _read(archive: zipfile.ZipFile, name: str) -> bytes | None:
-    try:
-        return archive.read(name)
-    except KeyError:
-        return None
+def _read(archive: SourceArchive, name: str) -> bytes | None:
+    return archive.read(name)

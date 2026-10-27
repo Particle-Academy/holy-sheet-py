@@ -20,6 +20,9 @@ import os
 from importlib import resources
 from typing import Any
 
+from .archive import office_template
+from .archive.source_archive import DEFAULT_LIMITS, open_for_reading
+from .exceptions import ArchiveRefused, UnsupportedFormatException
 from .helpers.array_builder import ArrayBuilder
 from .helpers.csv_builder import CsvBuilder
 from .ops._php_array import is_array, is_php_list, php_pairs
@@ -129,6 +132,48 @@ def _read_spreadsheet(data: bytes, path: str | None) -> dict[str, Any]:
     if FormatSniffer.sniff(data, path) == FormatSniffer.ODS:
         return OdsReader().describe(data)
     return XlsxReader().describe(data)
+
+
+def convert_template(data_or_path: bytes | str | os.PathLike[str], to: str | None = None) -> bytes:
+    """Turn an Excel `.xltx` / LibreOffice `.ots` template into its `.xlsx` /
+    `.ods` twin, or back. `to` is "document", "template", or None to flip.
+    Takes bytes or a path (PHP's superset, as `from_csv` does); returns bytes.
+
+    Only the declaration moves: the workbook part's content type in
+    `[Content_Types].xml`, or the ODF `mimetype` entry together with the
+    manifest's root media-type (ODF 1.3 requires them to agree). Every other
+    member is copied as its original zip record, byte for byte.
+
+    Raises `OfficeTemplateRefused` (macro-enabled, mismatched, already that
+    kind), `ArchiveRefused` (archive guard), or `UnsupportedFormatException` for
+    a package that is not a spreadsheet.
+    """
+    if isinstance(data_or_path, (bytes, bytearray, memoryview)):
+        data, label = bytes(data_or_path), None
+    else:
+        label = os.fspath(data_or_path)
+        data = read_file_bounded(label)
+    archive = open_for_reading(data, label)
+    raw = archive.read("mimetype")
+    mimetype = raw.decode("utf-8", "replace").strip() if raw is not None else None
+    odf = mimetype is not None and mimetype.startswith("application/vnd.oasis.opendocument.spreadsheet")
+    if not odf and (mimetype is not None or archive.read("xl/workbook.xml") is None):
+        raise UnsupportedFormatException.unknown_package(label, mimetype)
+    return office_template.convert(data, to)
+
+
+def read_file_bounded(path: str) -> bytes:
+    """A regular file, refused before allocation past the archive ceiling."""
+    limit = DEFAULT_LIMITS["maxArchiveBytes"]
+    if not os.path.isfile(path):
+        raise ArchiveRefused("archive_path")
+    with open(path, "rb") as handle:
+        if os.fstat(handle.fileno()).st_size > limit:
+            raise ArchiveRefused("archive_limit")
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise ArchiveRefused("archive_limit")
+    return data
 
 
 def describe(path: str) -> dict[str, Any]:
