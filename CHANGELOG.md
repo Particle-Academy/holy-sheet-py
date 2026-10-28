@@ -12,6 +12,21 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Data loss in Google Sheets for sheets wider than 26 columns.** Cells within
+  a row were written in string order of the column letter (`A, AA, AB, ..., B,
+  C`) instead of the ascending column order OOXML requires. Google Sheets drops
+  every cell in such a row after the first out-of-order one, silently: a row
+  written `A1, AA1..AE1, B1..Z1` came back from a Sheets import/export holding
+  only `A1`. Cells are now written `A..Z, AA, AB, ...`, byte-identical to PHP
+  holy-sheet. LibreOffice 26.2 read both orders without loss; Excel was not
+  measured. Sheets of 26 columns or fewer were never affected, and their bytes
+  do not change.
+  **What to do:** regenerate any file wider than 26 columns that was written by
+  an earlier version and may be opened in Google Sheets. Nothing else changes:
+  no API, schema or reader behaviour moved.
+
 ## [0.10.2] - 2026-10-28
 
 ### Fixed

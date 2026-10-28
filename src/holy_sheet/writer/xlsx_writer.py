@@ -277,15 +277,12 @@ class XlsxWriter:
         rows_xml = ""
         for row_index, row in sorted(rows.items()):
             cells_xml = ""
-            # LEXICOGRAPHIC on the column letter -- so a sheet wider than 26
-            # columns emits A, AA, AB, …, B, C. That is neither Excel's
-            # canonical order nor intuition, and it is what BOTH shipped engines
-            # do (`ksort` on a string key in PHP, `[...keys].sort()` in Node).
-            # It is replicated on purpose and pinned by the `wide` fixture:
-            # "fixing" it here would break parts parity for every wide sheet in
-            # every engine, so the fix belongs in a coordinated release train,
-            # not in a port.
-            for col in sorted(row.keys()):
+            # Ascending column INDEX (A..Z, AA, ...), as CT_Row requires. A
+            # string sort gives A, AA, ..., B, and Google Sheets silently drops
+            # every cell after the first out-of-order one. PHP: uksort on
+            # CellAddress::index; Node: sort on CellAddress.index. Pinned
+            # across engines by the `wide` parity fixture.
+            for col in sorted(row.keys(), key=CellAddress.index):
                 cells_xml += self.cell_xml(row[col], styles)
             height = sheet.row_heights.get(row_index)
             ht = f' ht="{_decimal(height * 0.75)}" customHeight="1"' if height is not None else ""

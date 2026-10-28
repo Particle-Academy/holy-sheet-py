@@ -167,13 +167,14 @@ sheet, not a big number. Both engines write `0`.
 
 ## Other invariants
 
-**Cells within a row are ordered LEXICOGRAPHICALLY on the column letter**, so a
-sheet wider than 26 columns emits `A, AA, AB, AC, AD, B, C, …`. That matches
-neither Excel's canonical order nor intuition, and **both shipped engines do it**
-(`ksort` on a string key in PHP, `[...keys].sort()` in Node). It is replicated on
-purpose and pinned by the `wide` fixture. Fixing it changes the bytes of every
-wide sheet in every engine simultaneously, so it belongs in a coordinated release
-train — not in a port. Do not "fix" it here.
+**Cells within a row are ordered by column INDEX** (`A..Z, AA, AB, …`), as
+OOXML requires: `sorted(row, key=CellAddress.index)`, mirroring PHP's `uksort`
+on `CellAddress::index` and Node's sort on `CellAddress.index`. A bare
+`sorted(row)` is a string sort and emits `A, AA, AB, …, B, C`, which is what all
+three engines did until 2026-10-28. It lost data: Google Sheets silently drops
+every cell in a row after the first out-of-order one, so a wide holy-sheet row
+came back from a Sheets import/export holding only `A1`. Pinned by the `wide`
+parity fixture and `test_orders_cells_within_a_wide_row_by_column_index`.
 
 **`cells` is document-ordered.** Python dicts are insertion-ordered, so the
 contract the Node port needed a deliberate structure for is free here — but it is

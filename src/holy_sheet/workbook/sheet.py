@@ -40,8 +40,8 @@ class Sheet:
         """Group cells by 1-based row number: {row: {column letter: Cell}}.
 
         Rows come out in ascending numeric order. The COLUMN order inside each
-        row is decided by the writer, and it sorts the letters
-        lexicographically -- see `XlsxWriter.sheet_xml`, which explains why.
+        row is decided by the writer, which sorts by column INDEX (A..Z, AA,
+        ...) -- see `XlsxWriter.sheet_xml`, which explains why.
         Malformed addresses are skipped, matching the reference engine.
         """
         rows: dict[int, dict[str, Cell]] = {}

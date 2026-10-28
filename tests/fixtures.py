@@ -19,17 +19,12 @@ META = {"creator": "Parity", "created": "2024-01-01T00:00:00Z"}
 def _wide_cells() -> dict[str, Any]:
     """30 columns of one row: A1 … Z1, AA1 … AD1.
 
-    This exists to pin a shared WART, not a feature. Both shipped engines order
-    the cells within a row lexicographically on the column letter -- `ksort` on
-    a string key in PHP, `[...row.keys()].sort()` in Node -- so past column Z a
-    row emits `A, AA, AB, AC, AD, B, C, …`. Excel tolerates it; it is neither
-    Excel's canonical order nor anyone's intuition, and it is EXACTLY the kind
-    of thing a third implementation quietly "fixes" on its way past, breaking
-    parts parity for every wide sheet in every engine at once.
-
-    The polyglot parity plan's ruling is explicit: replicate it, pin it with a
-    30-column fixture, and let the fix be a coordinated release train rather
-    than a port's unilateral decision.
+    Pins the cell order within a row past column Z across all three engines:
+    ascending column INDEX (A..Z, AA..AD), as OOXML requires. Until 2026-10-28
+    every engine wrote these lexicographically (A, AA, AB, …, B, C), and
+    Google Sheets silently dropped every cell after A1 in such a row. The fix
+    landed in PHP, Node and Python together; this fixture's parts parity is
+    what holds them together.
     """
     letters = [chr(65 + i) for i in range(26)] + ["AA", "AB", "AC", "AD"]
     return {f"{letter}1": {"value": index} for index, letter in enumerate(letters)}

@@ -191,22 +191,44 @@ def test_writes_booleans_as_typed_boolean_cells() -> None:
     assert '<c r="A2" t="b"><v>0</v></c>' in sheet
 
 
-def test_orders_cells_within_a_row_lexicographically_past_column_z() -> None:
-    """A shared WART, pinned so a port cannot quietly fix it.
+def _wide_order_cells() -> dict:
+    """32 columns A..AF in row 1 and a sparse row 2, both inserted backwards."""
+    from holy_sheet.workbook.cell_address import CellAddress
 
-    Both shipped engines sort the column letters as strings, so a wide row emits
-    A, AA, AB, …, B, C. Excel tolerates it. Changing it would change the bytes
-    of every wide sheet in every engine at once, so it belongs in a coordinated
-    release, not here -- and `tests/test_parity_php.py` proves PHP still agrees.
+    cells: dict = {f"{CellAddress.letter(i)}1": i for i in reversed(range(32))}
+    cells.update({"AZ2": "az", "B2": "b", "AA2": "aa", "Z2": "z"})
+    return cells
+
+
+def test_orders_cells_within_a_wide_row_by_column_index() -> None:
+    """A..Z, AA, AB, ... -- ascending column INDEX, as OOXML's CT_Row requires.
+
+    Mirrors PHP's WideRowCellOrderTest. The old lexicographic order (A, AA, AB,
+    ..., B, C) loses data in Google Sheets: on 2026-10-28 a workbook whose row 1
+    was written A1, AA1..AE1, B1..Z1 came back from a Sheets import/export with
+    only A1 in that row.
     """
-    with _open(holy_sheet.to_bytes(SCHEMAS["wide"])) as archive:
-        sheet = archive.read("xl/worksheets/sheet1.xml").decode()
-
     import re
 
-    order = re.findall(r'<c r="([A-Z]+)1"', sheet)
-    assert order[:6] == ["A", "AA", "AB", "AC", "AD", "B"]
-    assert order == sorted(order)
+    from holy_sheet.workbook.cell_address import CellAddress
+
+    schema = {"sheets": [{"name": "Wide", "cells": _wide_order_cells()}]}
+    with _open(holy_sheet.to_bytes(schema)) as archive:
+        sheet = archive.read("xl/worksheets/sheet1.xml").decode()
+
+    assert re.findall(r'<c r="([A-Z]+)1"', sheet) == [CellAddress.letter(i) for i in range(32)]
+    assert re.findall(r'<c r="([A-Z]+)2"', sheet) == ["B", "Z", "AA", "AZ"]
+
+
+def test_round_trips_every_cell_of_a_wide_sheet() -> None:
+    cells = _wide_order_cells()
+    read = holy_sheet.read(holy_sheet.to_bytes({"sheets": [{"name": "Wide", "cells": cells}]}))
+
+    got = {
+        address: (cell.get("value") if isinstance(cell, dict) else cell)
+        for address, cell in read["sheets"][0]["cells"].items()
+    }
+    assert got == cells
 
 
 def test_raises_rather_than_writing_an_invalid_schema(tmp_path) -> None:
