@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-28
+
 ### Fixed
 
 `lint()` now follows Excel's formula semantics in the places below, ported from
