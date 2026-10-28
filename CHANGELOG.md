@@ -12,6 +12,60 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+`lint()` now follows Excel's formula semantics in the places below, ported from
+PHP holy-sheet 2.11.1 (plus lazy `IF`, which all three linters gain together).
+What you will notice: **fewer false `#NAME?` and `#DIV/0!` reports** on
+formulas Excel accepts, and **some new true positives** on formulas Excel
+rejects or errors on that the linter used to pass. `lint()`'s signature and the
+issue shape `{sheet, address, formula, error, hint}` are unchanged. Nothing to
+do unless you assert on the exact set of issues a formula produces. Error labels
+and hint texts are byte-identical to PHP and Node.
+
+- **`IF` evaluates only the branch it takes.** `=IF(A2=0,0,1/A2)` with A2 = 0
+  used to lint as `#DIV/0!`; it now lints clean, as does any error in the
+  untaken branch. That branch is still parsed, so a syntax error or an unknown
+  function there is still `#NAME?`. An error in the condition still propagates,
+  after the whole `IF` has been parsed. `IFERROR` is not in the linter's
+  vocabulary and is still `#NAME?`.
+- **`%` is postfix percent.** `=50%` is 0.5 and `=A1%` is A1/100; these used to
+  lint as `#NAME?`. A binary `%` such as `=10%2`, which the linter used to
+  evaluate as `10/100*2`, is now reported, because Excel rejects it.
+- **`^` binds tighter than `*` and `/`.** `=2*3^2` is 18, not 36. It stays
+  left-associative (`=2^3^2` is 64) and below negation (`=-2^2` is 4), as in
+  Excel.
+- **A doubled quote inside text is one quote.** `="a""b"` is the three
+  characters `a"b`; it used to lint as `#NAME?`. A text literal that never
+  closes (`="abc`) is now reported instead of passing.
+- **IF reads its condition as Excel does.** Text is TRUE or FALSE only when it
+  spells one of them, in any case: `"false"` used to count as TRUE. Any other
+  text, `""` included, is now `#VALUE!` (a new true positive; it used to pass).
+  An error in the condition now propagates instead of picking a branch.
+- **LEN counts UTF-16 code units, as Excel does.** `=LEN("😀")` is 2, not 1:
+  `len()` counts code points, and Excel (and PHP and Node) count a character
+  outside the Basic Multilingual Plane as two.
+- **Comparisons follow Excel's type order.** Numeric text is text, and Excel
+  sorts text above every number: `="5">9` is TRUE and `="10"=10` is FALSE (both
+  used to compare as numbers). Text compares without regard to case
+  (`="a"="A"` is TRUE), logicals sort above text, and a blank cell equals 0,
+  `""` and FALSE. An error on either side now propagates instead of being
+  compared as text.
+- **A `#NAME?` hint says which kind it is.** The label is still `#NAME?`, but
+  every cause used to get one hint, "references an unknown function or has a
+  syntax error". A malformed formula now gets `Syntax error: <what and
+  where>...`; an unknown function gets `Unknown function VLOOKUP. ...`; a
+  `#NAME?` inherited from another cell names that cell; and an exception inside
+  the linter itself says it is a linter defect. Match on the hint's prefix if
+  you need to tell them apart.
+- **An unknown function is `#NAME?` wherever it sits.** `=IF(FALSE, FOO(1), 1)`
+  used to pass, because the error was a value that IF discarded. Excel resolves
+  names first, so it is `#NAME?` there and now here (a new true positive).
+- **The tokenizer uses PHP's ASCII character classes.** A no-break space, or a
+  letter such as `é` outside a text literal, is now a syntax error, as it is in
+  PHP; Python's Unicode-aware `isspace` / `isalpha` accepted them. A digit
+  such as `²` used to reach `float()` and fail inside the linter.
+
 ## [0.10.1] - 2026-10-27
 
 ### Fixed
