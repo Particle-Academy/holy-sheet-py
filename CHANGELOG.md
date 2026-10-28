@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-28
+
 ### Fixed
 
 - **Data loss in Google Sheets for sheets wider than 26 columns.** Cells within
