@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-11-08
+
 ### Security
 
 - **The reader's `DOCTYPE` refusal now holds for every part of an xlsx or ods.**
