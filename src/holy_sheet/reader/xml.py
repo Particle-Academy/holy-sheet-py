@@ -6,13 +6,16 @@ work here while the writer stays a string builder.
 
 Two things this wrapper adds:
 
-1. **A DOCTYPE is rejected before parsing.** A legitimate xlsx never contains
-   one, and an internal DTD subset is the entry point for entity expansion
-   ("billion laughs") and for external-entity file reads. `xml.etree` does not
-   expand external entities, but it does process an internal subset, and a
-   reader that is handed arbitrary uploaded files should not find out what its
-   parser does with one. Refusing the construct outright is cheaper and does not
-   depend on a parser's configuration staying the way it is today.
+1. **A DOCTYPE is refused, and this is the only place a part gets parsed.** A
+   legitimate spreadsheet part never has one, and an internal DTD subset is the
+   entry point for entity expansion. The check has two halves. The prolog is
+   read first, so an ordinary refusal never reaches the parser; it looks only
+   at the prolog, because searching the whole part would refuse a real cell
+   whose CDATA holds an HTML page. The parser then reports any doctype it meets,
+   and that report is what decides: no byte scan reads every encoding, and the
+   parse stops there, before the subset is processed. A part whose encoding the
+   parser cannot read is refused too. A test fails if `src/` parses XML anywhere
+   else.
 2. **Namespace-blind lookups.** OOXML parts bind the same namespaces under
    whatever prefixes the producer felt like, and `xml.etree` reports tags as
    `{uri}local`. Matching on the local name is what the Node reader does too,
@@ -22,27 +25,89 @@ Two things this wrapper adds:
 
 from __future__ import annotations
 
-import re
 from xml.etree import ElementTree
 
-_DOCTYPE = re.compile(rb"<!DOCTYPE", re.IGNORECASE)
+_BOMS = (b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")
+_DOCTYPE_REFUSED = (
+    "[holy-sheet] refusing to parse XML containing a DOCTYPE declaration; "
+    "a spreadsheet part never legitimately has one."
+)
 
 
 class XmlError(ValueError):
     """Raised when a part cannot be parsed, or refuses to be parsed."""
 
 
+class XmlRefused(XmlError):
+    """The part carries a DOCTYPE, or an encoding the parser cannot read.
+
+    A malformed part is only an `XmlError`. Most callers treat the two alike;
+    the package declaration is the one place the difference decides anything.
+    """
+
+
+class _DoctypeMet(Exception):
+    pass
+
+
+class _RefusingBuilder(ElementTree.TreeBuilder):
+    def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        raise _DoctypeMet
+
+
+def prolog_declares_doctype(raw: bytes) -> bool:
+    """Whether a DOCTYPE comes before the root element, for the encodings a byte
+    walk can read: anything ASCII-compatible, and UTF-16 or UTF-32 once their
+    NUL bytes are dropped (which keeps the ASCII this looks for)."""
+    if b"\0" in raw[:4]:
+        raw = raw.replace(b"\0", b"")
+    at = 0
+    for bom in _BOMS:
+        if raw.startswith(bom):
+            at = len(bom)
+            break
+    while True:
+        while at < len(raw) and raw[at] in b" \t\r\n":
+            at += 1
+        if raw.startswith(b"<?", at):
+            close = b"?>"
+        elif raw.startswith(b"<!--", at):
+            close = b"-->"
+        else:
+            return raw[at : at + 9].lower() == b"<!doctype"
+        end = raw.find(close, at)
+        if end == -1:
+            return False
+        at = end + len(close)
+
+
 def parse_xml(data: bytes | str) -> ElementTree.Element:
     raw = data.encode("utf-8") if isinstance(data, str) else data
-    if _DOCTYPE.search(raw[:4096]):
-        raise XmlError(
-            "[holy-sheet] refusing to parse XML containing a DOCTYPE declaration; "
-            "an xlsx part never legitimately has one."
-        )
+    if prolog_declares_doctype(raw):
+        raise XmlRefused(_DOCTYPE_REFUSED)
+    parser = ElementTree.XMLParser(target=_RefusingBuilder())
     try:
-        return ElementTree.fromstring(raw)
+        parser.feed(raw)
+        return parser.close()
+    except _DoctypeMet:
+        raise XmlRefused(_DOCTYPE_REFUSED) from None
     except ElementTree.ParseError as error:
         raise XmlError(f"[holy-sheet] malformed XML: {error}") from error
+    except (ValueError, LookupError) as error:
+        # The parser hands a declared encoding it cannot read straight up as one
+        # of these, and it says nothing about what the part holds.
+        raise XmlRefused(f"[holy-sheet] unreadable XML encoding: {error}") from error
+
+
+def is_refused(data: bytes) -> bool:
+    """Whether a part is refused, as opposed to merely malformed or fine."""
+    try:
+        parse_xml(data)
+    except XmlRefused:
+        return True
+    except XmlError:
+        return False
+    return False
 
 
 def parse_xml_or_none(data: bytes | str | None) -> ElementTree.Element | None:

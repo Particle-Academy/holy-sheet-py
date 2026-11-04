@@ -32,9 +32,6 @@ def _q(ns: str, name: str) -> str:
 
 
 def _load(xml: bytes | str) -> ElementTree.Element | None:
-    text = xml.decode("utf-8", "replace") if isinstance(xml, bytes) else xml
-    if "<!doctype" in text.lower():
-        return None
     return parse_xml_or_none(xml)
 
 

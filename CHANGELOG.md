@@ -12,6 +12,35 @@ what moved.
 
 ## [Unreleased]
 
+### Security
+
+- **The reader's `DOCTYPE` refusal now holds for every part of an xlsx or ods.**
+  The earlier check did not cover every part as written, so a crafted file could
+  define its own entities and have them expanded into the values and text the
+  reader returned. No file contents were reachable this way and no external file
+  was loaded. All parts now go through one gate, which behaves as PHP's does.
+  **What to do:** upgrade if you read files you did not write. No code changes.
+  Real spreadsheets carry no `DOCTYPE`, so they read as before. A refused
+  `xl/workbook.xml` or ods `content.xml` still raises `RuntimeError`, and any
+  other part is read as absent, as a malformed part always was.
+- **A package whose `[Content_Types].xml` carries a `DOCTYPE` is now refused.**
+  It was treated as declaring nothing, so the checks that depend on what a
+  package declares did not run on it. Reading or converting one now raises
+  `UnsupportedFormatException`, a `RuntimeError`.
+  **What to do:** nothing, unless you catch `OfficeTemplateRefused` alone around
+  a read.
+
+### Fixed
+
+- **A part declaring an encoding this parser cannot read no longer escapes the
+  reader as a bare `ValueError`.** It counts as a refusal: an absent part, the
+  `RuntimeError` above for the workbook part, or `UnsupportedFormatException` for
+  `[Content_Types].xml`. PHP can decode some of these, so such a file reads there
+  and not here.
+- **Text that only looks like a `DOCTYPE` is no longer refused.** A shared string
+  or chart title whose CDATA holds an HTML page near the start of its part was
+  dropped along with the rest of that part. It now reads.
+
 ## [0.10.3] - 2026-10-28
 
 ### Fixed

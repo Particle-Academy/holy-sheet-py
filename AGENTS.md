@@ -188,10 +188,18 @@ bytes every run, and a golden fixture is impossible.
 register first. Swapping those two lines in `XlsxWriter.to_bytes` produces a
 styles part missing every style the sheets reference.
 
-**Reading rejects a DOCTYPE before parsing.** An xlsx never legitimately carries
-one, and an internal DTD subset is the entry point for entity expansion on
-untrusted input. Refusing the construct is cheaper than depending on what a
-parser does with it today. See `reader/xml.py`.
+**Every XML part is parsed through `reader/xml.py`, which refuses a DOCTYPE.** A
+spreadsheet part never legitimately carries one, and an internal DTD subset is
+the entry point for entity expansion. A refusal looks like malformed XML, so each
+caller keeps its handling of a part it cannot read. The exception is
+`[Content_Types].xml`, whose declarations decide which other refusals apply: a
+refusal there refuses the package with `UnsupportedFormatException`. A test fails
+if `src/` parses XML anywhere else.
+
+Don't replace the check with a search of the bytes. `prolog_declares_doctype`
+reads only the prolog, and what the parser reports through
+`_RefusingBuilder.doctype` is what decides. `tests/test_doctype_refusal.py` holds
+the cases.
 
 **Dates parse in UTC, from an explicit grammar.** Not `datetime.fromisoformat`,
 whose accepted set changed in Python 3.11 — that would make a cell's serial

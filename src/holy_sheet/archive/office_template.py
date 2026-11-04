@@ -33,7 +33,7 @@ import zlib
 from typing import Any, Iterator, Protocol
 from xml.etree.ElementTree import Element
 
-from ..exceptions import OfficeTemplateRefused
+from ..exceptions import OfficeTemplateRefused, UnsupportedFormatException
 from .source_archive import SourceArchive
 
 
@@ -103,10 +103,17 @@ def source_kind(archive: PackageView) -> str:
     read. A package that declares nothing a template would is a `document`,
     exactly as before: only templates are new.
 
-    Raises `OfficeTemplateRefused` (`macro_enabled` or `family_mismatch`).
+    Raises `OfficeTemplateRefused` (`macro_enabled` or `family_mismatch`), or
+    `UnsupportedFormatException` for a declaration that is refused outright.
     """
     types = archive.read("[Content_Types].xml")
     if types is not None:
+        # Reading this as merely unparsable would make the package a plain
+        # document, and every declaration in it would go unchecked.
+        from ..reader.xml import is_refused
+
+        if is_refused(types):
+            raise UnsupportedFormatException.refused_declaration()
         return _ooxml_kind(archive, types)
     mimetype = archive.read("mimetype")
     if mimetype is not None:

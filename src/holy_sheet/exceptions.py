@@ -113,6 +113,15 @@ class UnsupportedFormatException(RuntimeError):
         )
 
     @classmethod
+    def refused_declaration(cls, path: str | None = None) -> "UnsupportedFormatException":
+        return cls(
+            f"[holy-sheet] cannot read {path if path is not None else 'this file'}: "
+            "its [Content_Types].xml carries a DOCTYPE or an unreadable encoding, "
+            "which no spreadsheet package has",
+            path,
+        )
+
+    @classmethod
     def unknown_package(cls, path: str | None, mimetype: str | None) -> "UnsupportedFormatException":
         what = (
             f"its mimetype is {mimetype}"
