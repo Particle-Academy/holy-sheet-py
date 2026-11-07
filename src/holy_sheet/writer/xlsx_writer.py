@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from ..helpers.php import PHP_INT_MAX, PHP_INT_MIN, format_float, php_number_format, php_to_string
 from ..helpers.xml import xml_escape
+from ..schema import data_validations
 from ..workbook.cell import Cell
 from ..workbook.cell_address import CellAddress
 from ..workbook.sheet import Sheet
@@ -333,6 +334,7 @@ class XlsxWriter:
             + cols_xml
             + f"<sheetData>{rows_xml}</sheetData>"
             + merges_xml
+            + data_validations.xml(sheet.data_validations, xml_escape)
             + page_setup_xml
             + header_footer_xml
             + (f'<drawing r:id="{_drawing_rel_id(sheet.has_comments())}"/>' if sheet.charts else "")

@@ -274,4 +274,49 @@ SCHEMAS: dict[str, Any] = {
             },
         ],
     },
+    # Data validation (holy-sheet 2.12.0 / 0.11.0): column rules and a sheet
+    # list, every type, a cross-sheet and a same-sheet source, a quote in an
+    # inline choice, escaped message text, a hidden dropdown arrow, and the
+    # element's position between mergeCells and pageSetup. The same fixture as
+    # PHP's DataValidationTest and holy-sheet-js's `dataValidations`.
+    "dataValidations": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Catalog",
+                "columns": [
+                    {"header": "SKU"},
+                    {
+                        "header": "Category",
+                        "validation": {
+                            "type": "list",
+                            "source": "'Lists'!A1:A3",
+                            "prompt": {"title": "Category", "text": "Pick a category."},
+                            "error": {"style": "stop", "title": "Unknown category", "text": "Choose a category from the list."},
+                        },
+                    },
+                    {"header": "Status", "validation": {"type": "list", "values": ["Draft", "Live", 'Retired "old"'], "showDropdown": True}},
+                    {"header": "Qty", "type": "integer", "validation": {"type": "whole", "operator": "between", "min": 0, "max": 1000}},
+                ],
+                "rows": [
+                    ["A-1", "Tools", "Draft", 3],
+                    ["A-2", "Parts", "Live", 10],
+                ],
+                "mergedRegions": [{"start": "K1", "end": "L1"}],
+                "print": {"orientation": "landscape"},
+                "dataValidations": [
+                    {"range": "E2:E500", "type": "decimal", "operator": "greaterThanOrEqual", "value": 0.5, "allowBlank": False,
+                     "error": {"style": "warning", "text": "Below the minimum & then some <x>"}},
+                    {"range": "F2:F500", "type": "date", "operator": "notBetween", "min": "2026-01-01", "max": "2026-12-31",
+                     "error": {"style": "information"}},
+                    {"range": "G2:G500", "type": "textLength", "operator": "lessThanOrEqual", "value": 40,
+                     "prompt": {"text": "At most 40 characters."}},
+                    {"range": "H2:H500", "type": "list", "values": ["Yes", "No", 7], "showDropdown": False},
+                    {"range": "i2:I500", "type": "list", "source": "A20:A22"},
+                    {"range": "J2", "type": "decimal", "operator": "lessThan", "value": 2.25},
+                ],
+            },
+            {"name": "Lists", "cells": {"A1": "Tools", "A2": "Parts", "A3": "Kits"}},
+        ],
+    },
 }

@@ -12,6 +12,30 @@ what moved.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-07
+
+### Added
+
+- **Data validation: dropdowns and bounds**, mirroring PHP holy-sheet 2.12.0. A
+  sheet's `dataValidations` list (`{range, type, ...}`) and a column's
+  `validation` (covering that column's data rows) write Excel data validation:
+  `type: "list"` is a dropdown whose choices come inline from `values` or from
+  cells through `source` (on this sheet or another); `whole`, `decimal`, `date`
+  and `textLength` bound the entry with `operator` (`between`, `notBetween`,
+  `equal`, `notEqual`, `greaterThan`, `lessThan`, `greaterThanOrEqual`,
+  `lessThanOrEqual`) and `min` / `max` or `value`. `allowBlank`,
+  `showDropdown`, an input `prompt` and an `error` alert (`stop`, `warning` or
+  `information`) are optional. `validate()` reports a bad rule at its path in
+  PHP's wording, including an inline list over Excel's 255-character limit;
+  `validate_and_repair()` fixes only the case of a type, operator or error style,
+  and never mutates the schema it is given. The worksheet part is byte-identical
+  to PHP's (new `dataValidations` parity fixture). The reader does not return
+  validations yet.
+  **What to do:** nothing unless you want dropdowns. Workbooks without
+  validations are written byte for byte as before. To add one, see the README's
+  "Data validation" section; a template's dropdown usually belongs in
+  `dataValidations` with a range past the sample rows, like `"B2:B500"`.
+
 ## [0.10.5] - 2026-11-07
 
 Mirrors `particle-academy/holy-sheet` 2.11.5.

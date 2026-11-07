@@ -20,7 +20,7 @@ from ..exceptions import SchemaException
 from ..helpers.php import entries, is_array, is_list, is_numeric_string, numeric_string_to_number, php_to_string, type_of
 from ..workbook.cell_address import CellAddress
 from ..workbook.chart_range import ChartRange
-from . import column_widths
+from . import column_widths, data_validations
 from .normalizer import CHART_TYPES
 from .repairer import Repairer
 
@@ -71,8 +71,13 @@ class Validator:
             )
             return errors
 
+        sheet_names = [
+            sheet["name"] for _, sheet in entries(sheets)
+            if isinstance(sheet, dict) and isinstance(sheet.get("name"), str)
+        ]
+
         for key, sheet in entries(sheets):
-            errors.extend(self._validate_sheet(sheet, f"sheets[{key}]"))
+            errors.extend(self._validate_sheet(sheet, f"sheets[{key}]", sheet_names))
 
         return errors
 
@@ -101,7 +106,8 @@ class Validator:
 
     # ------------------------------------------------------------------ #
 
-    def _validate_sheet(self, sheet: Any, path: str) -> list[dict[str, Any]]:
+    def _validate_sheet(self, sheet: Any, path: str, sheet_names: list[str] | None = None) -> list[dict[str, Any]]:
+        sheet_names = sheet_names if sheet_names is not None else []
         if not is_array(sheet):
             return [
                 _error(
@@ -155,8 +161,14 @@ class Validator:
                     )
                 )
             else:
+                rows_value = _get(sheet, "rows")
+                data_rows = len(rows_value) if is_array(rows_value) else 0
+                own_sheet = _get(sheet, "name") if isinstance(_get(sheet, "name"), str) else ""
                 for key, column in entries(columns):
                     errors.extend(self._validate_column(column, f"{path}.columns[{key}]"))
+                    if isinstance(column, dict) and "validation" in column:
+                        for sub, expected, got, value, hint in data_validations.problems(column["validation"], own_sheet, sheet_names, True, data_rows):
+                            errors.append(_error(f"{path}.columns[{key}].validation{sub}", expected, got, value, hint))
 
         if _has(sheet, "rows"):
             rows = _get(sheet, "rows")
@@ -296,6 +308,18 @@ class Validator:
 
         if _has(sheet, "charts"):
             errors.extend(_validate_charts(sheet["charts"], path, php_to_string(_get(sheet, "name"))))
+
+        if isinstance(sheet, dict) and "dataValidations" in sheet:
+            rules = sheet["dataValidations"]
+            # PHP's array: [] and {} are one value, so an empty dict is an empty list.
+            if not (is_list(rules) or (isinstance(rules, dict) and len(rules) == 0)):
+                errors.append(_error(f"{path}.dataValidations", "a list of validations", type_of(rules), rules,
+                                     'dataValidations is a list: [{"range": "B2:B100", "type": "list", "values": ["Open", "Closed"]}].'))
+            else:
+                own_sheet = sheet["name"] if isinstance(sheet.get("name"), str) else ""
+                for k, dv in enumerate(rules if is_list(rules) else []):
+                    for sub, expected, got, value, hint in data_validations.problems(dv, own_sheet, sheet_names, False, 0):
+                        errors.append(_error(f"{path}.dataValidations[{k}]{sub}", expected, got, value, hint))
 
         print_spec = _get(sheet, "print")
         if print_spec is not None:

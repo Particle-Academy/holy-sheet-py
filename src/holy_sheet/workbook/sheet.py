@@ -35,6 +35,9 @@ class Sheet:
     # series: [{name, values: ChartRange, color}], from: [col, row0], to: [col, row0],
     # legend: bool | None, dataLabels: bool, format}. Both corners are 0-based.
     charts: list[dict[str, Any]] = field(default_factory=list)
+    # Data validation rules in normal form (schema/data_validations.normalize):
+    # column rules first, then the sheet's own list.
+    data_validations: list[dict[str, Any]] = field(default_factory=list)
 
     def rows(self) -> dict[int, dict[str, Cell]]:
         """Group cells by 1-based row number: {row: {column letter: Cell}}.

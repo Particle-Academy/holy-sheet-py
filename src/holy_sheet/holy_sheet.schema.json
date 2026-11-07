@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Particle-Academy/holy-sheet/skills/holy-sheet.schema.json",
   "title": "Holy Sheet workbook schema",
-  "description": "Input format for HolySheet\\Agent::write(). Describes a multi-sheet xlsx workbook agentically. Everything in this schema is SUPPORTED NOW: values, formulas, per-column types and number formats, per-cell styling, themes, merges, frozen panes, column widths, totals and comments. A workbook is judged by how it READS, not only by whether the numbers are right — money should render as money and a header row should look like one, so prefer a typed column over a raw number and set the presentation the document needs.",
+  "description": "Input format for HolySheet\\Agent::write(). Describes a multi-sheet xlsx workbook agentically. Everything in this schema is SUPPORTED NOW: values, formulas, per-column types and number formats, per-cell styling, themes, merges, frozen panes, column widths, totals, comments and data validation (dropdowns and bounds). A workbook is judged by how it READS, not only by whether the numbers are right — money should render as money and a header row should look like one, so prefer a typed column over a raw number and set the presentation the document needs.",
   "type": "object",
   "required": [
     "sheets"
@@ -210,6 +210,16 @@
             }
           }
         },
+        "dataValidations": {
+          "type": "array",
+          "description": "Rules on what a person may type into cells: a dropdown, or a bound on a number, a date or a text length. Each names its cells with range: [{\"range\": \"B2:B500\", \"type\": \"list\", \"values\": [\"Open\", \"Closed\"]}]. A template's rule runs well past the sample rows. For a rule on exactly a column's data rows, set validation on the column instead.",
+          "items": {
+            "allOf": [
+              { "$ref": "#/definitions/DataValidation" },
+              { "required": ["range"] }
+            ]
+          }
+        },
         "print": {
           "type": "object",
           "additionalProperties": false,
@@ -277,6 +287,56 @@
           "type": "number",
           "minimum": 0,
           "description": "Column width in pixels. Same as columnWidths but per-column."
+        },
+        "validation": {
+          "$ref": "#/definitions/DataValidation",
+          "description": "A data validation on this column's data rows (every row in rows, below the header). Leave range off. The sheet must have rows; for an empty template use the sheet's dataValidations with a range."
+        }
+      }
+    },
+    "DataValidation": {
+      "type": "object",
+      "description": "One data validation rule. type list is a dropdown: its choices come inline from values, or from cells through source, never both. whole, decimal, date and textLength bound the entry with operator: between and notBetween take min and max, the others take value.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "range": { "type": "string", "description": "The cells it applies to, on this sheet: \"B2:B500\" or \"C4\". Only in the sheet's dataValidations." },
+        "type": { "type": "string", "enum": ["list", "whole", "decimal", "date", "textLength"] },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": ["string", "integer"] },
+          "description": "list: the choices, in order. A choice cannot contain a comma, and the choices joined by commas must fit in 255 characters; otherwise put them in cells and use source."
+        },
+        "source": { "type": "string", "description": "list: the cells holding the choices, \"A2:A20\" on this sheet or \"'Lists'!A1:A10\" on another. Written as an absolute reference, so every cell in range reads the same choices." },
+        "showDropdown": { "type": "boolean", "default": true, "description": "list: false hides the in-cell arrow and still enforces the list." },
+        "operator": {
+          "type": "string",
+          "enum": ["between", "notBetween", "equal", "notEqual", "greaterThan", "lessThan", "greaterThanOrEqual", "lessThanOrEqual"],
+          "default": "between"
+        },
+        "min": { "type": ["number", "string"], "description": "between / notBetween: the lower bound. A number; a date as \"YYYY-MM-DD\"; a length for textLength." },
+        "max": { "type": ["number", "string"], "description": "between / notBetween: the upper bound, no less than min." },
+        "value": { "type": ["number", "string"], "description": "Every other operator: the one value compared against." },
+        "allowBlank": { "type": "boolean", "default": true, "description": "false makes an empty cell break the rule." },
+        "prompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Shown when the cell is selected: {\"title\": \"Category\", \"text\": \"Pick a category.\"}.",
+          "properties": {
+            "title": { "type": "string", "maxLength": 32 },
+            "text": { "type": "string", "maxLength": 255 }
+          }
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Shown when an entry breaks the rule. style stop refuses it (the default), warning lets the person keep it, information only tells them.",
+          "properties": {
+            "style": { "type": "string", "enum": ["stop", "warning", "information"], "default": "stop" },
+            "title": { "type": "string", "maxLength": 32 },
+            "text": { "type": "string", "maxLength": 225 }
+          }
         }
       }
     },

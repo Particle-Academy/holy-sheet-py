@@ -31,6 +31,7 @@ from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
 from ..writer.format.date_converter import DateConverter
 from . import column_widths
+from . import data_validations
 from .theme import Theme
 
 _AGG_FUNCTIONS = ("SUM", "AVG", "COUNT", "MIN", "MAX")
@@ -58,6 +59,7 @@ class Normalizer:
                 row_heights=normalize_row_heights(sheet.get("rowHeights")),
                 print_setup=normalize_print(sheet.get("print")),
                 charts=normalize_charts(sheet.get("charts"), name, sparse),
+                data_validations=data_validations.for_sheet(sheet, name),
             )
 
         cells: dict[str, Cell] = {}
@@ -146,6 +148,7 @@ class Normalizer:
             row_heights=normalize_row_heights(sheet.get("rowHeights")),
             print_setup=normalize_print(sheet.get("print")),
             charts=normalize_charts(sheet.get("charts"), name, cells),
+            data_validations=data_validations.for_sheet(sheet, name),
         )
 
     def _normalize_cell_map(self, cell_map: Any, sheet_name: str | None = None) -> dict[str, Cell]:

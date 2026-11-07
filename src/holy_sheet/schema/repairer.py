@@ -23,6 +23,9 @@ from typing import Any
 
 from ..helpers.php import is_array, is_list, is_numeric_string, numeric_string_to_number
 from . import column_widths
+from .data_validations import OPERATORS as _DV_OPERATORS
+from .data_validations import STYLES as _DV_STYLES
+from .data_validations import TYPES as _DV_TYPES
 
 _VALID_THEMES = ("default", "minimal", "plain", "business")
 _ISO_DATE = re.compile(
@@ -135,11 +138,47 @@ class Repairer:
                     f"trimmed whitespace from cell addresses in '{path}.cells'"
                 )
 
+        # Data validation enums in the wrong case. Only an exact match ignoring
+        # case is repaired; 'dropdown' is not 'list', and saying so is the
+        # validator's job.
+        # The sheet is a shallow copy, so every level written to is copied
+        # first: the caller's schema is never mutated.
+        if isinstance(sheet.get("columns"), list):
+            columns = list(sheet["columns"])
+            for col_idx, column in enumerate(columns):
+                if isinstance(column, dict) and isinstance(column.get("validation"), dict):
+                    columns[col_idx] = {**column, "validation": self._repair_validation(column["validation"], f"{path}.columns[{col_idx}].validation")}
+            sheet["columns"] = columns
+        if isinstance(sheet.get("dataValidations"), list):
+            sheet["dataValidations"] = [
+                self._repair_validation(dv, f"{path}.dataValidations[{k}]") if isinstance(dv, dict) else dv
+                for k, dv in enumerate(sheet["dataValidations"])
+            ]
+
         if isinstance(sheet.get("columns"), list) and isinstance(sheet.get("rows"), list):
             sheet = self._repair_column_type_inference(sheet, path)
             sheet = self._repair_stringified_numerics(sheet)
 
         return sheet
+
+    def _repair_validation(self, dv: dict[str, Any], path: str) -> dict[str, Any]:
+        dv = dict(dv)
+        dv = self._repair_case(dv, "type", _DV_TYPES, f"{path}.type")
+        dv = self._repair_case(dv, "operator", _DV_OPERATORS, f"{path}.operator")
+        if isinstance(dv.get("error"), dict):
+            dv["error"] = self._repair_case(dv["error"], "style", _DV_STYLES, f"{path}.error.style")
+        return dv
+
+    def _repair_case(self, box: dict[str, Any], key: str, allowed: list[str], path: str) -> dict[str, Any]:
+        value = box.get(key)
+        if not isinstance(value, str) or value in allowed:
+            return box
+        for candidate in allowed:
+            if candidate.lower() == value.lower():
+                box = {**box, key: candidate}
+                self._repairs.append(f"changed '{path}' from '{value}' to '{candidate}'")
+                break
+        return box
 
     def _repair_column_type_inference(self, sheet: dict[str, Any], path: str) -> dict[str, Any]:
         columns = list(sheet["columns"])

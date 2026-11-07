@@ -226,7 +226,49 @@ Multiple sheets · inline-string text cells · deduplicated
 fonts/fills/borders/numFmts in `styles.xml` · merged regions · column widths ·
 frozen panes · comments (`comments1.xml` + `vmlDrawing1.vml`) · formulas with
 optional cached values · symbolic totals (`{"Revenue": "sum"}` becomes
-`SUM(B2:B4)`) · four themes.
+`SUM(B2:B4)`) · four themes · data validation (dropdowns and bounds).
+
+### Data validation (dropdowns)
+
+A rule on what a person may type into cells: a dropdown, or a bound on a whole
+number, a decimal, a date or a text length, with an optional input prompt and
+error alert. Set it on a column to cover that column's data rows, or list it on
+the sheet with a `range` (the form a template uses, running past its sample
+rows):
+
+```python
+holy_sheet.write({
+    "sheets": [
+        {
+            "name": "Catalog",
+            "columns": [
+                {"header": "SKU"},
+                {"header": "Status", "validation": {"type": "list", "values": ["Draft", "Live", "Retired"]}},
+            ],
+            "rows": [["A-1", "Draft"]],
+            "dataValidations": [
+                {"range": "C2:C500", "type": "list", "source": "'Lists'!A1:A20",
+                 "prompt": {"title": "Category", "text": "Pick a category."},
+                 "error": {"style": "stop", "title": "Unknown category", "text": "Choose from the list."}},
+                {"range": "D2:D500", "type": "whole", "operator": "between", "min": 0, "max": 1000},
+                {"range": "E2:E500", "type": "date", "operator": "greaterThanOrEqual", "value": "2026-01-01"},
+            ],
+        },
+        {"name": "Lists", "cells": {"A1": "Tools", "A2": "Parts"}},
+    ],
+}, "catalog-template.xlsx")
+```
+
+`type` is `list`, `whole`, `decimal`, `date` (`YYYY-MM-DD`) or `textLength`. A
+`list` takes `values` (inline) or `source` (a range, on this sheet or another),
+never both; inline choices cannot contain a comma and must fit in 255 characters
+joined by commas, Excel's limit, which `validate()` enforces. Every other type
+takes `operator` (default `between`): `between` / `notBetween` take `min` and
+`max`, the rest take `value`. Optional: `allowBlank` (default true),
+`showDropdown` (lists, default true), `prompt: {title, text}`,
+`error: {style: "stop" | "warning" | "information", title, text}`. The written
+part is byte-identical to the PHP package's. The reader does not return
+validations yet.
 
 Exactly those parts and no others — no `sharedStrings.xml`, no `calcChain.xml`,
 no `theme1.xml`. Those are the classic sources of xlsx diff noise and every
