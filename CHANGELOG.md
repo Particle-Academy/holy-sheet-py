@@ -68,6 +68,13 @@ Mirrors `particle-academy/holy-sheet` 2.11.5.
   **What to do:** nothing, unless you set `format` on a column and relied on it
   having no effect. Remove it to keep the type-derived format.
 
+### Changed
+
+- **The shared conformance fixtures are pinned at 0.46.0** (were 0.34.0), in the
+  test and in CI's checkout together. Re-run first: shared/decimal 18 passed, 0
+  failed, 0 skipped, the same count as at 0.34.0. Test-only.
+  **What to do:** nothing.
+
 ## [0.10.4] - 2026-11-04
 
 ### Security

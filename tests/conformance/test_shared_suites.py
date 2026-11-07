@@ -58,9 +58,13 @@ import fancy_conformance as loader
 # skipped -- the identical count recorded at 0.22.0 and 0.22.1 above, so the
 # newer fixtures changed no answer this port gives.
 #
+# Moved 0.34.0 -> 0.46.0 on 2026-11-07, when the 0.10.5 release preflight refused
+# the tag: the local suite reads the envelope's checkout, which was at 0.46.0.
+# Re-run against 0.46.0 before moving; the counts are in the 0.10.5 changelog.
+#
 # CI checks out `ref: v<this>` from .github/workflows/ci.yml. Move the two
 # together; test_ci_checks_out_the_fixture_tag_this_suite_pins fails otherwise.
-PINNED_SUITE_VERSION = "0.34.0"
+PINNED_SUITE_VERSION = "0.46.0"
 
 DISPATCH = {
     "formatFloat": lambda v: format_float(float(v)),
