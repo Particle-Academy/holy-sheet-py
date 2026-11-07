@@ -53,6 +53,8 @@ class XlsxReader:
             root = parse_xml_or_none(workbook_xml)
             if root is None:
                 raise RuntimeError("[holy-sheet] failed to parse xl/workbook.xml")
+            # The 1904 date system: `<workbookPr date1904="1"/>` (or "true").
+            date1904 = attr(find(root, "workbookPr"), "date1904") in ("1", "true")
 
             sheets: list[Sheet] = []
             i = 0
@@ -115,7 +117,7 @@ class XlsxReader:
 
             meta = _parse_doc_props(_read(archive, "docProps/core.xml"))
 
-        return Workbook(sheets=sheets, meta=meta, source_kind=kind)
+        return Workbook(sheets=sheets, meta=meta, source_kind=kind, date1904=date1904)
 
 
 def _parse_doc_props(core_xml: bytes | None) -> dict[str, Any]:

@@ -190,11 +190,26 @@ styles part missing every style the sheets reference.
 
 **Every XML part is parsed through `reader/xml.py`, which refuses a DOCTYPE.** A
 spreadsheet part never legitimately carries one, and an internal DTD subset is
-the entry point for entity expansion. A refusal looks like malformed XML, so each
-caller keeps its handling of a part it cannot read. The exception is
-`[Content_Types].xml`, whose declarations decide which other refusals apply: a
-refusal there refuses the package with `UnsupportedFormatException`. A test fails
-if `src/` parses XML anywhere else.
+the entry point for entity expansion. **A DOCTYPE raises
+`UnsupportedFormatException`** (`refused_part()`) out of `parse_xml_or_none`, from
+any part; until 0.10.5 it read as absent, so a worksheet with one came back as an
+EMPTY sheet. Malformed XML and an unreadable encoding (`XmlRefused` that is not
+`XmlDoctypeRefused`) still read as absent there, so each caller keeps its
+handling of a part it cannot parse. `[Content_Types].xml` is checked first, and
+any refusal there, encoding included, refuses the package
+(`refused_declaration()`). A test fails if `src/` parses XML anywhere else.
+
+**Dates follow the workbook's date system.** `<workbookPr date1904="1"/>` (or
+`"true"`) moves the epoch to 1904-01-01; `Workbook.date1904` carries it to
+`WorkbookSchema`, which converts a date-formatted cell's value AND its formula's
+cached value to ISO. The writer always writes the 1900 system, and the
+Normalizer's `_coerce_cached` turns an ISO `computedValue` back into a serial.
+
+**A column's `format` code is `CellFormat.format_code` with no display_format**,
+written verbatim by `StylesRegistry` (PHP's `formatCode`). The column type still
+coerces the value through the type-derived format kept beside it. This port's
+reader does not yet keep a foreign code from a file, and `from_dict` does not
+read a cell-level `formatCode`; PHP does both.
 
 Don't replace the check with a search of the bytes. `prolog_declares_doctype`
 reads only the prolog, and what the parser reports through

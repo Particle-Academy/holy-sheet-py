@@ -296,9 +296,11 @@ def test_reports_a_formula_result_of_every_type_as_the_xlsx_reader_would_cache_i
         )
     )["sheets"][0]["cells"]
 
-    _same(cells["A1"], {"value": None, "formula": "DATE(2024,3,15)", "computedValue": 45366, "format": {"displayFormat": "date"}})
-    _same(cells["B1"], {"value": None, "formula": "A1+0.5", "computedValue": 45366.5, "format": {"displayFormat": "datetime"}})
-    _same(cells["C1"], {"value": None, "formula": "TIME(6,0,0)", "computedValue": 0.25, "format": {"displayFormat": "datetime"}})
+    # The date result is cached as its serial, then describes as the ISO date
+    # it shows, like a date-formatted xlsx formula (PHP 2.11.5).
+    _same(cells["A1"], {"value": None, "formula": "DATE(2024,3,15)", "computedValue": "2024-03-15", "format": {"displayFormat": "date"}})
+    _same(cells["B1"], {"value": None, "formula": "A1+0.5", "computedValue": "2024-03-15T12:00:00Z", "format": {"displayFormat": "datetime"}})
+    _same(cells["C1"], {"value": None, "formula": "TIME(6,0,0)", "computedValue": "1899-12-30T06:00:00Z", "format": {"displayFormat": "datetime"}})
     _same(cells["D1"], {"value": None, "formula": "1=1", "computedValue": True})
     _same(cells["E1"], {"value": None, "formula": '"a"', "computedValue": "a"})
 

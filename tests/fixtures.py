@@ -138,6 +138,36 @@ SCHEMAS: dict[str, Any] = {
             }
         ],
     },
+    # A column `format` code (holy-sheet 2.11.5): written as a custom numFmt,
+    # with the type still deciding the value, through the totals row; and a
+    # date formula whose cached value is the ISO string describe() now returns.
+    "columnFormats": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Loads",
+                "theme": "default",
+                "columns": [
+                    {"header": "When", "type": "date", "format": "dd/mm/yyyy"},
+                    {"header": "Weight", "type": "number", "format": '#,##0.000" kg"'},
+                    {"header": "Ratio", "format": "0.0000"},
+                ],
+                "rows": [
+                    ["2026-11-07", 1.5, 0.25],
+                    ["2026-11-08", 2.25, 0.5],
+                ],
+                "totals": {"Weight": "sum"},
+            },
+            {
+                "name": "Due",
+                "cells": {
+                    "A1": {"value": "2026-11-07", "format": {"displayFormat": "date"}},
+                    "A2": {"formula": "A1+1", "computedValue": "2026-11-08", "format": {"displayFormat": "date"}},
+                    "A3": {"formula": "A1+0.25", "computedValue": "2026-11-07T06:00:00Z", "format": {"displayFormat": "datetime"}},
+                },
+            },
+        ],
+    },
     "decorated": {
         "meta": META,
         "sheets": [

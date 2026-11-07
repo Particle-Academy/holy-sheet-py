@@ -122,6 +122,17 @@ class UnsupportedFormatException(RuntimeError):
         )
 
     @classmethod
+    def refused_part(cls, path: str | None = None) -> "UnsupportedFormatException":
+        """A part other than the declaration carries a DOCTYPE. It used to read as
+        an absent part, so a worksheet with one came back as an empty sheet.
+        Mirrors PHP `UnsupportedFormatException::refusedPart`."""
+        return cls(
+            f"[holy-sheet] cannot read {path if path is not None else 'this file'}: "
+            "one of its XML parts carries a DOCTYPE, which no spreadsheet part has",
+            path,
+        )
+
+    @classmethod
     def unknown_package(cls, path: str | None, mimetype: str | None) -> "UnsupportedFormatException":
         what = (
             f"its mimetype is {mimetype}"

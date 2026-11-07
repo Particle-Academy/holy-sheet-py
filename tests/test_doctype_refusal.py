@@ -188,27 +188,57 @@ def test_does_not_read_a_drawing_that_takes_an_anchor_from_an_entity() -> None:
 # ─── What a consumer sees, per part: the same table as PHP ────────────────────
 
 
-def test_throws_for_a_refused_workbook_part() -> None:
+# A refused part used to read as an absent one, so a worksheet carrying a
+# DOCTYPE came back as an EMPTY sheet and the caller could not tell that from a
+# sheet with nothing on it. A refusal now refuses the file, as one in
+# [Content_Types].xml always has. Mirrors PHP 2.11.5.
+REFUSING_PARTS = MARKER_PARTS + [
+    "xl/styles.xml",
+    "xl/workbook.xml",
+    "xl/_rels/workbook.xml.rels",
+    "xl/worksheets/_rels/sheet1.xml.rels",
+    "xl/drawings/drawing1.xml",
+    "xl/drawings/_rels/drawing1.xml.rels",
+]
+
+
+@pytest.mark.parametrize("encoding", list(ENCODINGS))
+@pytest.mark.parametrize("part", REFUSING_PARTS)
+def test_refuses_the_file_when_any_part_it_reads_carries_a_doctype(part: str, encoding: str) -> None:
     parts = xlsx_parts()
-    parts["xl/workbook.xml"] = with_doctype(parts["xl/workbook.xml"])
-    with pytest.raises(RuntimeError, match="failed to parse xl/workbook.xml"):
+    parts[part] = ENCODINGS[encoding](with_doctype(parts[part]))
+    with pytest.raises(UnsupportedFormatException, match="carries a DOCTYPE"):
         holy_sheet.read(zip_of(parts))
 
 
-def test_keeps_the_sheet_with_no_cells_for_a_refused_worksheet_part() -> None:
+def test_refuses_a_worksheet_with_a_doctype_instead_of_reading_it_as_an_empty_sheet() -> None:
     parts = xlsx_parts()
     parts["xl/worksheets/sheet1.xml"] = with_doctype(parts["xl/worksheets/sheet1.xml"])
+    with pytest.raises(UnsupportedFormatException):
+        holy_sheet.read(zip_of(parts))
+
+
+def test_still_reads_a_file_whose_optional_part_is_missing() -> None:
+    parts = xlsx_parts()
+    del parts["docProps/core.xml"]
+    read = holy_sheet.read(zip_of(parts))
+    assert read["sheets"][0]["cells"]["A1"]["value"] == MARKER
+    assert "meta" not in read
+
+
+def test_still_reads_a_malformed_worksheet_as_an_empty_sheet_because_only_a_refusal_raises() -> None:
+    parts = xlsx_parts()
+    parts["xl/worksheets/sheet1.xml"] = b"<worksheet><sheetData>"
     sheet = holy_sheet.read(zip_of(parts))["sheets"][0]
     assert sheet["name"] == "Sheet1"
     assert not sheet.get("cells")
 
 
-def test_reads_the_other_parts_without_refused_shared_strings() -> None:
+def test_still_throws_for_a_malformed_workbook_part() -> None:
     parts = xlsx_parts()
-    parts["xl/sharedStrings.xml"] = with_doctype(parts["xl/sharedStrings.xml"])
-    cells = holy_sheet.read(zip_of(parts))["sheets"][0]["cells"]
-    assert cells["A1"]["value"] == MARKER
-    assert cells["A3"].get("value", "") != MARKER
+    parts["xl/workbook.xml"] = b"<workbook>"
+    with pytest.raises(RuntimeError, match="failed to parse xl/workbook.xml"):
+        holy_sheet.read(zip_of(parts))
 
 
 # ─── The package declaration ──────────────────────────────────────────────────
@@ -382,10 +412,11 @@ def test_reads_a_clean_ods() -> None:
 
 
 @pytest.mark.parametrize("encoding", list(ENCODINGS))
-def test_throws_for_a_refused_ods_content_part(encoding: str) -> None:
-    parts = ods_parts(b"&x;")
-    parts["content.xml"] = ENCODINGS[encoding](with_doctype(parts["content.xml"]))
-    with pytest.raises(RuntimeError, match="failed to parse content.xml"):
+@pytest.mark.parametrize("part", ["content.xml", "styles.xml", "meta.xml"])
+def test_refuses_the_file_for_an_ods_part_with_a_doctype(part: str, encoding: str) -> None:
+    parts = ods_parts()
+    parts[part] = ENCODINGS[encoding](with_doctype(parts[part]))
+    with pytest.raises(UnsupportedFormatException, match="carries a DOCTYPE"):
         holy_sheet.read(zip_of(parts))
 
 
@@ -461,6 +492,12 @@ def test_malformed_is_an_error_but_not_a_refusal() -> None:
         parse_xml(b"<r>")
     assert not isinstance(caught.value, XmlRefused)
     assert parse_xml_or_none(b"<r>") is None
+    assert parse_xml_or_none(None) is None
+
+
+def test_the_lenient_gate_raises_for_a_doctype_rather_than_returning_none() -> None:
+    with pytest.raises(UnsupportedFormatException, match="carries a DOCTYPE"):
+        parse_xml_or_none(b'<?xml version="1.0"?>' + DOCTYPE + b"<r>&x;</r>")
 
 
 @pytest.mark.parametrize("encoding", ["UTF-7", "Shift_JIS", "zlib", "undefined", "no-such-encoding"])

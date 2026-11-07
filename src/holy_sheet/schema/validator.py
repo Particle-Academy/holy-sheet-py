@@ -382,6 +382,23 @@ class Validator:
                 )
             )
 
+        # A format code the writer cannot emit used to vanish with the field
+        # (PHP 2.11.5): a non-empty string of at most 255 bytes.
+        # `in`, not _has: PHP tests array_key_exists here, so a null is reported.
+        if isinstance(column, dict) and "format" in column:
+            code = column["format"]
+            if not isinstance(code, str) or code == "" or len(code.encode("utf-8")) > 255:
+                errors.append(
+                    _error(
+                        f"{path}.format",
+                        "a non-empty number-format code of at most 255 bytes",
+                        type_of(code),
+                        code,
+                        'A custom Excel number-format code applied to every cell in the column, like "0.000" or '
+                        '"dd/mm/yyyy". It overrides the format the column type would give.',
+                    )
+                )
+
         return errors
 
 

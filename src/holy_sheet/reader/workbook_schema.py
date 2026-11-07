@@ -22,7 +22,9 @@ from .format.date_inverter import DateInverter
 class WorkbookSchema:
     @staticmethod
     def from_workbook(workbook: Workbook) -> dict[str, Any]:
-        schema: dict[str, Any] = {"sheets": [_sheet_to_schema(sheet) for sheet in workbook.sheets]}
+        schema: dict[str, Any] = {
+            "sheets": [_sheet_to_schema(sheet, workbook.date1904) for sheet in workbook.sheets]
+        }
         if workbook.meta:
             schema["meta"] = workbook.meta
         # Only templates say so; a document read is unchanged.
@@ -31,10 +33,10 @@ class WorkbookSchema:
         return schema
 
 
-def _sheet_to_schema(sheet: Sheet) -> dict[str, Any]:
+def _sheet_to_schema(sheet: Sheet, date1904: bool = False) -> dict[str, Any]:
     cells: dict[str, Any] = {}
     for address, cell in sheet.cells.items():
-        cell_schema = _cell_to_schema(cell)
+        cell_schema = _cell_to_schema(cell, date1904)
         if cell_schema is None:  # wholly-empty cell: absent means the same thing
             continue
         cells[address] = cell_schema
@@ -99,26 +101,22 @@ def _chart_to_schema(chart: dict[str, Any], sheet_name: str) -> dict[str, Any]:
     return out
 
 
-def _cell_to_schema(cell: Cell) -> dict[str, Any] | None:
-    value = cell.value
+def _cell_to_schema(cell: Cell, date1904: bool = False) -> dict[str, Any] | None:
     fmt = cell.format
 
     # A date-formatted serial goes back out as the ISO string it came in as,
     # so the described schema can be written again without drifting a day
-    # further from the epoch every round trip.
-    if (
-        fmt is not None
-        and fmt.display_format in ("date", "datetime")
-        and isinstance(value, (int, float))
-        and not isinstance(value, bool)
-    ):
-        value = DateInverter.to_iso(float(value), fmt.display_format == "datetime")
+    # further from the epoch every round trip. A formula's cached value is
+    # converted the same way: it is what the cell displays, and as a bare serial
+    # it read as a number nobody had written. Mirrors PHP 2.11.5.
+    value = _date_or_value(cell.value, fmt, date1904)
+    cached = _date_or_value(cell.cached_value, fmt, date1904)
 
     out: dict[str, Any] = {"value": value}
     if cell.formula is not None:
         out["formula"] = cell.formula
-    if cell.cached_value is not None:
-        out["computedValue"] = cell.cached_value
+    if cached is not None:
+        out["computedValue"] = cached
     if fmt is not None and not fmt.is_empty():
         out["format"] = _format_to_dict(fmt)
     if cell.comment is not None:
@@ -127,6 +125,17 @@ def _cell_to_schema(cell: Cell) -> dict[str, Any] | None:
     if out == {"value": None}:
         return None
     return out
+
+
+def _date_or_value(value: Any, fmt: CellFormat | None, date1904: bool) -> Any:
+    if (
+        fmt is not None
+        and fmt.display_format in ("date", "datetime")
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+    ):
+        return DateInverter.to_iso(float(value), fmt.display_format == "datetime", date1904)
+    return value
 
 
 def _format_to_dict(fmt: CellFormat) -> dict[str, Any]:

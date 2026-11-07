@@ -20,10 +20,12 @@ class SharedStringsParser:
         root = parse_xml_or_none(xml)
         if root is None:
             return []
-        return [_render_si(si) for si in find_all(root, "si")]
+        return [render_si(si) for si in find_all(root, "si")]
 
 
-def _render_si(si: Element) -> str:
+def render_si(si: Element) -> str:
+    """One string item's text: its `<t>`, or its `<r><t>` runs joined. Also how
+    a cell's inline `<is>` is read, which has the same content model."""
     direct = find(si, "t")
     if direct is not None:
         return text_of(direct)

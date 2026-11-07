@@ -15,7 +15,9 @@ Two things this wrapper adds:
    and that report is what decides: no byte scan reads every encoding, and the
    parse stops there, before the subset is processed. A part whose encoding the
    parser cannot read is refused too. A test fails if `src/` parses XML anywhere
-   else.
+   else. A DOCTYPE refusal raises `UnsupportedFormatException` out of
+   `parse_xml_or_none`; malformed XML and an unreadable encoding still read as
+   absent there.
 2. **Namespace-blind lookups.** OOXML parts bind the same namespaces under
    whatever prefixes the producer felt like, and `xml.etree` reports tags as
    `{uri}local`. Matching on the local name is what the Node reader does too,
@@ -43,6 +45,15 @@ class XmlRefused(XmlError):
 
     A malformed part is only an `XmlError`. Most callers treat the two alike;
     the package declaration is the one place the difference decides anything.
+    """
+
+
+class XmlDoctypeRefused(XmlRefused):
+    """The part carries a DOCTYPE: the refusal that refuses the whole file.
+
+    An unreadable encoding is refused too, but it says nothing about what the
+    part holds, so outside the package declaration it still reads as absent
+    (as PHP, whose libxml decodes more encodings, reads one it cannot decode).
     """
 
 
@@ -84,13 +95,13 @@ def prolog_declares_doctype(raw: bytes) -> bool:
 def parse_xml(data: bytes | str) -> ElementTree.Element:
     raw = data.encode("utf-8") if isinstance(data, str) else data
     if prolog_declares_doctype(raw):
-        raise XmlRefused(_DOCTYPE_REFUSED)
+        raise XmlDoctypeRefused(_DOCTYPE_REFUSED)
     parser = ElementTree.XMLParser(target=_RefusingBuilder())
     try:
         parser.feed(raw)
         return parser.close()
     except _DoctypeMet:
-        raise XmlRefused(_DOCTYPE_REFUSED) from None
+        raise XmlDoctypeRefused(_DOCTYPE_REFUSED) from None
     except ElementTree.ParseError as error:
         raise XmlError(f"[holy-sheet] malformed XML: {error}") from error
     except (ValueError, LookupError) as error:
@@ -113,13 +124,20 @@ def is_refused(data: bytes) -> bool:
 def parse_xml_or_none(data: bytes | str | None) -> ElementTree.Element | None:
     """Parse, or None when the part is absent or unparseable.
 
-    Mirrors the reference engine's `@simplexml_load_string(...) === false`
-    branches, which degrade to an empty result rather than throwing.
+    Mirrors the reference engine's `PartXml::simple(...) === false` branches,
+    which degrade to an empty result rather than throwing -- EXCEPT for a
+    DOCTYPE, which raises `UnsupportedFormatException` (PHP 2.11.5). Read as
+    absent, a worksheet carrying one came back as an empty sheet, and the
+    caller could not tell that from a sheet with nothing on it.
     """
     if data is None:
         return None
     try:
         return parse_xml(data)
+    except XmlDoctypeRefused:
+        from ..exceptions import UnsupportedFormatException
+
+        raise UnsupportedFormatException.refused_part() from None
     except XmlError:
         return None
 

@@ -12,6 +12,7 @@ from ..workbook.cell_comment import CellComment
 from ..workbook.cell_format import CellFormat
 from ..workbook.merged_region import MergedRegion
 from ..workbook.sheet import Sheet
+from .shared_strings_parser import render_si
 from .xml import attr, find, find_all, parse_xml_or_none, text_of
 
 _INTEGER_TEXT = re.compile(r"^-?\d+$")
@@ -149,10 +150,11 @@ def _parse_cells(
                     else None
                 )
             elif cell_type == "inlineStr":
+                # A rich inline string holds runs, not one <t>; it read as None
+                # until the runs were joined as a shared string's are (PHP 2.11.5).
                 inline = find(c, "is")
-                t = find(inline, "t") if inline is not None else None
-                if t is not None:
-                    value = text_of(t)
+                if inline is not None and (find(inline, "t") is not None or find(inline, "r") is not None):
+                    value = render_si(inline)
             elif cell_type == "s" and value_el is not None:
                 idx = int(text_of(value_el) or 0)
                 value = shared_strings[idx] if 0 <= idx < len(shared_strings) else ""

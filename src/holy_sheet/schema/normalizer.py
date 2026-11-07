@@ -67,9 +67,16 @@ class Normalizer:
         header_offset = 0
 
         column_formats: dict[int, CellFormat | None] = {}
+        # The type-derived format, kept only for a column whose `format` code
+        # replaced it: the code decides how a cell LOOKS, the type still decides
+        # what its value is (a date column's strings become serials). PHP 2.11.5.
+        column_coercions: dict[int, CellFormat | None] = {}
         column_by_header: dict[str, int] = {}
         for col_idx, column_def in entries(columns):
             column_formats[col_idx] = self._column_format(column_def)
+            column_coercions[col_idx] = (
+                self._column_type_format(column_def) if column_code(column_def) is not None else None
+            )
             if isinstance(column_def, dict) and column_def.get("header") is not None:
                 column_by_header[str(column_def["header"])] = col_idx
 
@@ -95,7 +102,7 @@ class Normalizer:
                     merged = column_format.merge_with(row_band) if column_format else row_band
                 else:
                     merged = column_format
-                cells[address] = self._build_cell(address, value, merged, name)
+                cells[address] = self._build_cell(address, value, merged, name, column_coercions.get(c))
 
         totals = sheet.get("totals")
         if totals and is_array(totals) and len(rows) > 0 and len(columns) > 0:
@@ -176,7 +183,7 @@ class Normalizer:
                 formula=cell_data.get("formula"),
                 format=fmt,
                 comment=comment,
-                cached_value=cell_data.get("computedValue"),
+                cached_value=_coerce_cached(cell_data.get("computedValue"), fmt),
             )
         return cells
 
@@ -244,6 +251,15 @@ class Normalizer:
         return out
 
     def _column_format(self, column_def: Any) -> CellFormat | None:
+        """The format every cell in a column starts from. A `format` code
+        replaces the type-derived one, as the schema documents ("Overrides
+        type-derived format"); it is carried as `format_code` with no
+        display_format, which the writer emits as a custom numFmt verbatim.
+        Until 2026-11-07 the field was advertised and ignored. Mirrors PHP."""
+        code = column_code(column_def)
+        return CellFormat(format_code=code) if code is not None else self._column_type_format(column_def)
+
+    def _column_type_format(self, column_def: Any) -> CellFormat | None:
         if not isinstance(column_def, dict):
             return None
         column_type = column_def.get("type", "auto")
@@ -280,7 +296,10 @@ class Normalizer:
         value: Any,
         column_format: CellFormat | None,
         sheet_name: str | None = None,
+        coerce_as: CellFormat | None = None,
     ) -> Cell:
+        """``coerce_as``: the column's type-derived format when a ``format`` code
+        replaced it on the cell, so the type still coerces the value."""
         if isinstance(value, dict):
             cell_format = (
                 CellFormat.from_dict(value["format"])
@@ -288,16 +307,17 @@ class Normalizer:
                 else None
             )
             merged = column_format.merge_with(cell_format) if column_format else cell_format
+            coerce_format = coerce_as.merge_with(cell_format) if coerce_as is not None else merged
             comment = _comment_from(value.get("comment"))
             return Cell(
                 address=address,
                 value=self._coerce_value(
-                    value.get("value"), merged, address, sheet_name, explicit=True
+                    value.get("value"), coerce_format, address, sheet_name, explicit=True
                 ),
                 formula=value.get("formula"),
                 format=merged,
                 comment=comment,
-                cached_value=value.get("computedValue"),
+                cached_value=_coerce_cached(value.get("computedValue"), coerce_format),
             )
 
         value, formula = self._promote_formula(value)
@@ -306,7 +326,9 @@ class Normalizer:
             address=address,
             value=None
             if formula is not None
-            else self._coerce_value(value, column_format, address, sheet_name),
+            else self._coerce_value(
+                value, coerce_as if coerce_as is not None else column_format, address, sheet_name
+            ),
             formula=formula,
             format=column_format,
         )
@@ -427,6 +449,30 @@ class Normalizer:
 
 
 _ROW_NUMBER = re.compile(r"^[1-9][0-9]{0,6}$")
+
+
+def column_code(column_def: Any) -> str | None:
+    """A column's `format` code, when it is one the writer can emit: a non-empty
+    string of at most 255 bytes, the bound the Validator holds it to. Mirrors
+    PHP ``Normalizer::columnCode``."""
+    code = column_def.get("format") if isinstance(column_def, dict) else None
+    if isinstance(code, str) and code != "" and len(code.encode("utf-8")) <= 255:
+        return code
+    return None
+
+
+def _coerce_cached(cached: Any, fmt: CellFormat | None) -> Any:
+    """A formula's cached value, under the cell's format. describe() reads the
+    cached value of a date-formatted formula as the ISO date it displays, so
+    writing that output back must turn it into the serial again: as text,
+    ``<v>2026-11-08</v>`` is no number at all in a numeric cell. The conversion
+    ``_coerce_value`` gives a date cell's own value. Mirrors PHP ``coerceCached``."""
+    display = fmt.display_format if fmt else None
+    if display in ("date", "datetime") and (
+        isinstance(cached, (datetime, date)) or (isinstance(cached, str) and cached.strip() != "")
+    ):
+        return DateConverter.to_serial(cached, display == "datetime")
+    return cached
 
 
 def _php_numeric(value: Any) -> float | None:

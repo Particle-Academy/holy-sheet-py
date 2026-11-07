@@ -21,3 +21,7 @@ class Workbook:
     #: What a reader found: an .xltx / .ots reads exactly like its .xlsx / .ods
     #: twin and is marked "template".
     source_kind: str = "document"
+    #: Whether the file counts its date serials from 1904-01-01
+    #: (`<workbookPr date1904="1"/>`). Read only: the writer always writes the
+    #: 1900 system, and describe() turns every date into an ISO string.
+    date1904: bool = False

@@ -108,6 +108,10 @@ class StylesRegistry:
 
     def _num_fmt_for(self, fmt: CellFormat) -> int:
         code = NumFmtBuilder.build(fmt)
+        # A raw code goes out verbatim when nothing more specific was asked for.
+        # It is escaped in to_xml() like any code. Mirrors PHP numFmtFor.
+        if code is None and fmt.display_format is None and fmt.format_code:
+            code = fmt.format_code
         if code is None:
             return 0
         if code in self._num_fmt_index:

@@ -33,6 +33,10 @@ class CellFormat:
     border_bottom: str | None = None
     border_left: str | None = None
     currency: str | None = None  # ISO-4217
+    #: A number-format code no displayFormat describes, written verbatim. Set by
+    #: a column's `format` (PHP's `formatCode`, which PHP's reader also fills
+    #: from a foreign code; this port's reader does not yet).
+    format_code: str | None = None
 
     def key(self) -> tuple:
         """Stable dedup key for StylesRegistry.
@@ -54,6 +58,7 @@ class CellFormat:
             self.border_bottom,
             self.border_left,
             self.currency,
+            self.format_code,
         )
 
     def is_empty(self) -> bool:
@@ -72,6 +77,7 @@ class CellFormat:
             and self.border_bottom is None
             and self.border_left is None
             and self.currency is None
+            and self.format_code is None
         )
 
     @staticmethod
@@ -116,6 +122,10 @@ class CellFormat:
             border_bottom=_coalesce(other.border_bottom, self.border_bottom),
             border_left=_coalesce(other.border_left, self.border_left),
             currency=_coalesce(other.currency, self.currency),
+            # A displayFormat set on top replaces a code beneath it (PHP).
+            format_code=other.format_code
+            if other.display_format is not None
+            else _coalesce(other.format_code, self.format_code),
         )
 
 
