@@ -22,13 +22,13 @@ class SharedStringsParser:
     @staticmethod
     def parse(xml: bytes | str | None, limits: "ReadLimits | None" = None) -> list[str]:
         """The table is counted before any entry is rendered (``maxSharedStrings``)."""
+        # Counted while streaming, before the parse builds the table's tree.
+        if limits is not None:
+            limits.shared_strings_part(xml)
         root = parse_xml_or_none(xml)
         if root is None:
             return []
-        items = find_all(root, "si")
-        if limits is not None:
-            limits.shared_strings(len(items))
-        return [render_si(si) for si in items]
+        return [render_si(si) for si in find_all(root, "si")]
 
 
 def render_si(si: Element) -> str:

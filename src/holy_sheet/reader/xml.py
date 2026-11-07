@@ -27,6 +27,7 @@ Two things this wrapper adds:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from xml.etree import ElementTree
 
 _BOMS = (b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")
@@ -108,6 +109,76 @@ def parse_xml(data: bytes | str) -> ElementTree.Element:
         # The parser hands a declared encoding it cannot read straight up as one
         # of these, and it says nothing about what the part holds.
         raise XmlRefused(f"[holy-sheet] unreadable XML encoding: {error}") from error
+
+
+class _StreamTarget:
+    """An XMLParser target that builds nothing: it reports elements to `visit`
+    down to `max_depth` (the root is 0) and keeps only the depth."""
+
+    def __init__(self, max_depth: int, visit: Callable[[int, str, dict[str, str]], None]) -> None:
+        self._depth = -1
+        self._max_depth = max_depth
+        self._visit = visit
+
+    def start(self, tag: str, attrib: dict[str, str]) -> None:
+        self._depth += 1
+        if self._depth <= self._max_depth:
+            self._visit(self._depth, local_name(tag), attrib)
+
+    def end(self, tag: str) -> None:
+        self._depth -= 1
+
+    def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        raise _DoctypeMet
+
+    def close(self) -> None:
+        return None
+
+
+#: Fed to the parser in slices this size, so its own buffer stays bounded.
+_STREAM_CHUNK = 1 << 20
+
+
+def stream_xml(data: bytes | str | None, max_depth: int, visit: Callable[[int, str, dict[str, str]], None]) -> bool:
+    """Stream a part's elements without building a tree: `visit(depth, local
+    name, attributes)` for every element down to `max_depth`. The same parser
+    as `parse_xml`, so it sees the elements the parse would build; it is how a
+    read counts a part BEFORE the parse that holds all of it (a 275 MB worksheet
+    parses into gigabytes). A DOCTYPE raises `UnsupportedFormatException`, as
+    `parse_xml_or_none` does. Returns False for a malformed or unreadable part:
+    the elements up to the error were visited, which is what lets a limit refuse
+    a part the parser would only call malformed after building most of it.
+    Mirrors PHP `PartXml::stream`."""
+    if data is None:
+        return False
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    if prolog_declares_doctype(raw):
+        from ..exceptions import UnsupportedFormatException
+
+        raise UnsupportedFormatException.refused_part()
+    parser = ElementTree.XMLParser(target=_StreamTarget(max_depth, visit))
+    view = memoryview(raw)
+    try:
+        for at in range(0, len(view), _STREAM_CHUNK):
+            parser.feed(view[at : at + _STREAM_CHUNK])
+        parser.close()
+    except _DoctypeMet:
+        from ..exceptions import UnsupportedFormatException
+
+        raise UnsupportedFormatException.refused_part() from None
+    except (ElementTree.ParseError, ValueError, LookupError):
+        return False
+    return True
+
+
+def attr_local(attrib: dict[str, str], name: str) -> str | None:
+    """`attr()` for a streamed element's attributes: by local name."""
+    if name in attrib:
+        return attrib[name]
+    for key, value in attrib.items():
+        if local_name(key) == name:
+            return value
+    return None
 
 
 def is_refused(data: bytes) -> bool:

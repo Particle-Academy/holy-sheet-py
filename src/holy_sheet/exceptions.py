@@ -48,11 +48,38 @@ class ArchiveRefused(RuntimeError):
 
     Reasons: `archive_corrupt`, `archive_unsupported`, `archive_path`,
     `archive_duplicate`, `archive_limit`, `archive_limits`.
+
+    A refusal over a limit (``archive_limit``, and ``read_limit`` from
+    `ReadLimitExceeded`) carries `limit`, `max` and `actual`, so an app can tell
+    which one to raise; they are None for every other reason. A bad limit
+    SETTING (``archive_limits``, ``read_limits``) names it in the message.
     """
 
-    def __init__(self, reason: str) -> None:
+    def __init__(
+        self,
+        reason: str,
+        limit: str | None = None,
+        max: int | None = None,
+        actual: int | None = None,
+        detail: str | None = None,
+    ) -> None:
         self.reason = reason
-        super().__init__(f"Source archive refused: {reason}")
+        self.limit = limit
+        self.max = max
+        self.actual = actual
+        if detail is None and limit is not None and max is not None and actual is not None:
+            detail = f"{limit} is {max:,}; this file needs at least {actual:,}"
+        super().__init__(f"Source archive refused: {reason}" + (f" ({detail})" if detail is not None else ""))
+
+    @classmethod
+    def over_limit(cls, limit: str, max: int, actual: int) -> ArchiveRefused:
+        """One archive limit exceeded: ``archive_limit``, naming it."""
+        return cls("archive_limit", limit, max, actual)
+
+    @classmethod
+    def bad_setting(cls, reason: str, key: object, known: bool) -> ArchiveRefused:
+        """A bad limit setting: `reason` is ``archive_limits`` or ``read_limits``."""
+        return cls(reason, detail=f"{key} must be a positive integer" if known else f'unknown limit "{key}"')
 
 
 _LIMIT_WORDS = {
@@ -74,10 +101,7 @@ class ReadLimitExceeded(ArchiveRefused):
     """
 
     def __init__(self, limit: str, max: int, actual: int, subject: str | None = None) -> None:  # noqa: A002
-        super().__init__("read_limit")
-        self.limit = limit
-        self.max = max
-        self.actual = actual
+        super().__init__("read_limit", limit, max, actual)
         what, one, many, by = _LIMIT_WORDS[limit]
         if subject is not None:
             what, by = subject, ""

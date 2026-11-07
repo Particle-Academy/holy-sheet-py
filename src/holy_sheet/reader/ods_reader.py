@@ -72,14 +72,15 @@ class OdsReader:
         #: The running read limits for this read; set by read_workbook().
         self._limits: ReadLimits | None = None
 
-    def describe(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
+    def describe(self, data: bytes | SourceArchive, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
         return WorkbookSchema.from_workbook(self.read_workbook(data, only, limits))
 
-    def read_workbook(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
+    def read_workbook(self, data: bytes | SourceArchive, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
         """`only` reads just the table of that name; an unknown name raises
         SheetNotFoundException listing every table."""
         self._limits = limits if limits is not None else ReadLimits.from_options()
-        archive = open_for_reading(data)
+        # An archive the sniffer already opened is read as is, not inflated twice.
+        archive = data if isinstance(data, SourceArchive) else open_for_reading(data, None, self._limits.archive)
         kind = source_kind(archive)
 
         with archive:

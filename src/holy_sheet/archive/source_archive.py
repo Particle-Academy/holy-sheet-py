@@ -40,10 +40,10 @@ class SourceArchive:
 
     @classmethod
     def open(cls, data: bytes, limits: dict[str, int] | None = None) -> "SourceArchive":
-        merged = _limits(limits or {})
+        merged = resolve_limits(limits or {})
         data = bytes(data)
         if len(data) > merged["maxArchiveBytes"]:
-            raise ArchiveRefused("archive_limit")
+            raise ArchiveRefused.over_limit("maxArchiveBytes", merged["maxArchiveBytes"], len(data))
         records, comment = _index(data, merged)
         parts: dict[str, bytes] = {}
         for record in records:
@@ -90,12 +90,13 @@ class SourceArchive:
         return None
 
 
-def open_for_reading(data: bytes, path: str | None = None) -> SourceArchive:
+def open_for_reading(data: bytes, path: str | None = None, limits: dict[str, int] | None = None) -> SourceArchive:
     """The readers' door: bytes that are not a zip at all are named as such
     (`UnsupportedFormatException.not_a_zip`, as before); a zip the guard refuses
-    raises its typed `ArchiveRefused`, as PHP's and Node's readers do."""
+    raises its typed `ArchiveRefused`, as PHP's and Node's readers do. `limits`
+    are the read's archive limits (the defaults when None)."""
     try:
-        return SourceArchive.open(data)
+        return SourceArchive.open(data, limits)
     except ArchiveRefused as error:
         if error.reason == "archive_corrupt" and bytes(data[:2]) != b"PK":
             raise UnsupportedFormatException.not_a_zip(path) from error
@@ -105,10 +106,15 @@ def open_for_reading(data: bytes, path: str | None = None) -> SourceArchive:
 _PUBLIC = ("name", "size", "crc", "local", "finish", "central", "central_length", "flags", "method", "local_extra")
 
 
-def _limits(limits: dict[str, int]) -> dict[str, int]:
+def resolve_limits(limits: dict[str, Any]) -> dict[str, int]:
+    """The given limits over the defaults. Each must be a known name and a
+    positive int (a bool is not one); anything else is
+    ``ArchiveRefused("archive_limits")`` naming the setting. Mirrors PHP
+    `SourceArchive::resolveLimits`."""
     for key, value in limits.items():
-        if key not in DEFAULT_LIMITS or isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            raise ArchiveRefused("archive_limits")
+        known = key in DEFAULT_LIMITS
+        if not known or isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ArchiveRefused.bad_setting("archive_limits", key, known)
     return {**DEFAULT_LIMITS, **limits}
 
 
@@ -144,7 +150,7 @@ def _index(data: bytes, limits: dict[str, int]) -> tuple[list[dict[str, Any]], b
     if _u16(data, end + 4) != 0 or _u16(data, end + 6) != 0 or _u16(data, end + 8) != count or count == 65535:
         raise ArchiveRefused("archive_unsupported")
     if count > limits["maxEntries"]:
-        raise ArchiveRefused("archive_limit")
+        raise ArchiveRefused.over_limit("maxEntries", limits["maxEntries"], count)
     directory = _u32(data, end + 16)
     at = directory
     if end - at < count * 46:
@@ -183,12 +189,15 @@ def _index(data: bytes, limits: dict[str, int]) -> tuple[list[dict[str, Any]], b
             raise ArchiveRefused("archive_duplicate")
         seen.add(name)
         expanded += size
-        if (
-            size > limits["maxPartBytes"]
-            or expanded > limits["maxExpandedBytes"]
-            or size > max(1, compressed) * limits["maxCompressionRatio"]
-        ):
-            raise ArchiveRefused("archive_limit")
+        # In PHP's order, so the same file names the same limit in every port.
+        if size > limits["maxPartBytes"]:
+            raise ArchiveRefused.over_limit("maxPartBytes", limits["maxPartBytes"], size)
+        if expanded > limits["maxExpandedBytes"]:
+            raise ArchiveRefused.over_limit("maxExpandedBytes", limits["maxExpandedBytes"], expanded)
+        packed = max(1, compressed)
+        if size > packed * limits["maxCompressionRatio"]:
+            # The ratio rounded up: over the limit exactly when the check fires.
+            raise ArchiveRefused.over_limit("maxCompressionRatio", limits["maxCompressionRatio"], -(-size // packed))
         if method == 0 and compressed != size:
             raise ArchiveRefused("archive_corrupt")
         _extra(data, at + 46 + name_length, extra_length)

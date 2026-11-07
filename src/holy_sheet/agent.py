@@ -155,9 +155,11 @@ def _read_options(sheet: Any, limits: Any) -> ReadLimits:
 
 def _read_spreadsheet(data: bytes, path: str | None, sheet: str | None = None, limits: Any = None) -> dict[str, Any]:
     read_limits = _read_options(sheet, limits)
-    if FormatSniffer.sniff(data, path) == FormatSniffer.ODS:
-        return OdsReader().describe(data, sheet, read_limits)
-    return XlsxReader().describe(data, sheet, read_limits)
+    # Opened once, under the read's archive limits: the sniffed archive is the one read.
+    kind, archive = FormatSniffer.sniff_archive(data, path, read_limits.archive)
+    if kind == FormatSniffer.ODS:
+        return OdsReader().describe(archive, sheet, read_limits)
+    return XlsxReader().describe(archive, sheet, read_limits)
 
 
 def convert_template(data_or_path: bytes | str | os.PathLike[str], to: str | None = None) -> bytes:
@@ -188,17 +190,25 @@ def convert_template(data_or_path: bytes | str | os.PathLike[str], to: str | Non
     return office_template.convert(data, to)
 
 
-def read_file_bounded(path: str) -> bytes:
-    """A regular file, refused before allocation past the archive ceiling."""
-    limit = DEFAULT_LIMITS["maxArchiveBytes"]
+def read_file_bounded(path: str, limit: int | None = None) -> bytes:
+    """A regular file, refused before allocation past `limit` (the read's
+    ``maxArchiveBytes``; the default ceiling when None)."""
+    if limit is None:
+        limit = DEFAULT_LIMITS["maxArchiveBytes"]
     if not os.path.isfile(path):
         raise ArchiveRefused("archive_path")
     with open(path, "rb") as handle:
-        if os.fstat(handle.fileno()).st_size > limit:
-            raise ArchiveRefused("archive_limit")
-        data = handle.read(limit + 1)
+        size = os.fstat(handle.fileno()).st_size
+        if size > limit:
+            raise ArchiveRefused.over_limit("maxArchiveBytes", limit, size)
+        # Sized by the file, bounded by the limit: read(n) allocates n bytes up
+        # front, so read(limit + 1) cost a raised maxArchiveBytes on every read.
+        # The +1 still catches a file that grew past the limit since fstat.
+        data = handle.read(min(size, limit) + 1)
+        if len(data) > size and len(data) <= limit:
+            data += handle.read(limit + 1 - len(data))
     if len(data) > limit:
-        raise ArchiveRefused("archive_limit")
+        raise ArchiveRefused.over_limit("maxArchiveBytes", limit, len(data))
     return data
 
 
@@ -209,11 +219,12 @@ def describe(path: str, *, sheet: str | None = None, limits: dict[str, int] | No
     raising -- an agent tool call that returns a structured miss is recoverable,
     where an exception is a dead end. ``sheet`` and ``limits`` are `read()`'s.
     """
-    _read_options(sheet, limits)
+    read_limits = _read_options(sheet, limits)
     if not os.path.isfile(path):
         return {"error": "not_found", "path": path}
-    with open(path, "rb") as handle:
-        return _read_spreadsheet(handle.read(), path, sheet, limits)
+    # Bounded before allocation, as PHP's SourceArchive::fromPath and Node's
+    # readFileBounded are; until 0.13.0 this read the whole file first.
+    return _read_spreadsheet(read_file_bounded(path, read_limits.archive["maxArchiveBytes"]), path, sheet, limits)
 
 
 def tool_definition() -> dict[str, Any]:

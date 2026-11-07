@@ -61,7 +61,7 @@ from .helpers.csv_builder import CsvBuilder
 from .ops import SheetDiff, SheetOpSchema, SheetReducer
 from .reader.format_sniffer import FormatSniffer
 from .reader.ods_reader import OdsReader
-from .reader.read_limits import DEFAULT_READ_LIMITS
+from .reader.read_limits import DEFAULT_ARCHIVE_LIMITS, DEFAULT_READ_LIMITS
 from .reader.xlsx_reader import XlsxReader
 from .schema.formula_linter import FormulaLinter
 from .schema.inference import Inference
@@ -126,6 +126,7 @@ __all__ = [
     "XlsxReader",
     "XlsxWriter",
     # Version surface.
+    "DEFAULT_ARCHIVE_LIMITS",
     "DEFAULT_READ_LIMITS",
     "FEATURE_BASELINE",
     "VERSION",

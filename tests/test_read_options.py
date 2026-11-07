@@ -20,6 +20,7 @@ import pytest
 
 import holy_sheet
 from holy_sheet import (
+    DEFAULT_ARCHIVE_LIMITS,
     DEFAULT_READ_LIMITS,
     ArchiveRefused,
     ReadLimitExceeded,
@@ -65,10 +66,11 @@ def _rows_kwargs(options: dict[str, Any]) -> dict[str, Any]:
 def _outcome(run) -> dict[str, Any]:
     try:
         return {"value": run()}
-    except ReadLimitExceeded as e:
-        return {"refused": {"reason": e.reason, "limit": e.limit, "max": e.max, "actual": e.actual, "message": str(e)}}
     except ArchiveRefused as e:
-        return {"refused": {"reason": e.reason}}
+        # ReadLimitExceeded is one too. A refusal naming a limit carries which
+        # one, its value and the count; every refusal carries a message.
+        named = {"limit": e.limit, "max": e.max, "actual": e.actual} if e.limit is not None else {}
+        return {"refused": {"reason": e.reason, **named, "message": str(e)}}
     except SheetNotFoundException as e:
         return {"sheetNotFound": {"sheet": e.sheet, "available": e.available, "message": str(e)}}
 
@@ -102,6 +104,7 @@ def test_turns_each_shared_case_into_rows(case: dict[str, Any]) -> None:
 
 def test_pins_the_default_limits_the_ports_share() -> None:
     assert DEFAULT_READ_LIMITS == CASES["defaultLimits"]
+    assert DEFAULT_ARCHIVE_LIMITS == CASES["defaultArchiveLimits"]
 
 
 def test_is_still_an_archive_refused() -> None:

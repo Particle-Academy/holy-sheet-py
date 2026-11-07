@@ -29,12 +29,13 @@ class WorksheetParser:
         shared_strings: list[str] | None = None,
         limits: ReadLimits | None = None,
     ) -> Sheet:
+        # Counted while streaming, BEFORE the parse builds the tree: a limit
+        # checked on the parsed part would come after the memory was spent.
+        if limits is not None:
+            limits.worksheet_part(worksheet_xml)
         root = parse_xml_or_none(worksheet_xml)
         if root is None:
             return Sheet(name=name)
-        # Counted from the parsed part before one Cell is built.
-        if limits is not None:
-            limits.worksheet(root)
 
         return Sheet(
             name=name,

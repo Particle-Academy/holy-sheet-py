@@ -35,16 +35,17 @@ from .xml import attr, find, find_all, parse_xml_or_none, text_of
 
 
 class XlsxReader:
-    def describe(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
+    def describe(self, data: bytes | SourceArchive, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
         return WorkbookSchema.from_workbook(self.read_workbook(data, only, limits))
 
-    def read_workbook(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
+    def read_workbook(self, data: bytes | SourceArchive, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
         """`only` reads just the sheet of that exact name (the others are never
         parsed); an unknown name raises SheetNotFoundException. Mirrors PHP
         `XlsxReader::readArchive`."""
         if limits is None:
             limits = ReadLimits.from_options()
-        archive = open_for_reading(data)
+        # An archive the sniffer already opened is read as is, not inflated twice.
+        archive = data if isinstance(data, SourceArchive) else open_for_reading(data, None, limits.archive)
         kind = source_kind(archive)
 
         with archive:

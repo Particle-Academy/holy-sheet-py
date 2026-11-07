@@ -216,6 +216,15 @@ reads only the prolog, and what the parser reports through
 `_RefusingBuilder.doctype` is what decides. `tests/test_doctype_refusal.py` holds
 the cases.
 
+**Read limits are counted BEFORE a part is parsed, never after.**
+`ReadLimits.worksheet_part()` and `shared_strings_part()` stream the part
+through `reader/xml.py`'s `stream_xml` (the same expat, a target that builds
+nothing, fed in 1 MiB slices) before `parse_xml_or_none`. Don't move a count
+onto the parsed tree: a 500,000-row sheet reached 4.8 GB before a post-parse
+count could refuse it. And never `read(limit + 1)` a file: `read(n)` allocates
+n bytes up front, so a raised `maxArchiveBytes` of 4 GiB cost 4 GiB on a 2 KB
+file. `read_file_bounded` reads `min(size, limit) + 1`.
+
 **Dates parse in UTC, from an explicit grammar.** Not `datetime.fromisoformat`,
 whose accepted set changed in Python 3.11 — that would make a cell's serial
 depend on the interpreter. Not PHP's `DateTimeImmutable` grammar either, which

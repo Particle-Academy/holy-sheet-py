@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from xml.etree.ElementTree import Element
 
+from ..archive.source_archive import DEFAULT_LIMITS as DEFAULT_ARCHIVE_LIMITS
+from ..archive.source_archive import resolve_limits
 from ..exceptions import ArchiveRefused, ReadLimitExceeded
 from ..workbook.cell_address import CellAddress
 from .ods.ns import php_trim
-from .xml import attr, find, find_all
+from .xml import attr_local, stream_xml
 
 #: Mirrors PHP `ReadLimits::DEFAULTS`; the reasons are in the 0.12.0 CHANGELOG entry.
 DEFAULT_READ_LIMITS: dict[str, int] = {
@@ -39,26 +40,54 @@ _DIGITS = re.compile(r"[0-9]+", re.ASCII)
 _ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 
+class _SheetCount:
+    """One worksheet's running count while it streams."""
+
+    def __init__(self) -> None:
+        self.rows = 0
+        self.columns = 0
+        self.cells = 0
+        self.seen_cols = False
+        self.seen_sheet_data = False
+        self.inside: str | None = None  # "cols" | "sheetData" | None: the depth-1 element we are in
+        self.in_row = False
+
+
 class ReadLimits:
     """One instance per read; it carries the running cell count."""
 
-    def __init__(self, limits: dict[str, int]) -> None:
+    def __init__(self, limits: dict[str, int], archive: dict[str, int] | None = None) -> None:
         self._limits = limits
+        #: The archive limits, resolved over their defaults.
+        self.archive: dict[str, int] = archive if archive is not None else dict(DEFAULT_ARCHIVE_LIMITS)
         self._cells = 0
         self._letters: dict[str, int] = {}
 
     @classmethod
     def from_options(cls, limits: Any = None) -> "ReadLimits":
+        """Any of the nine limits, by name (since 0.13.0 the archive limits too).
+        A read limit that is not a positive int, or a name that is no limit, is
+        ``ArchiveRefused("read_limits")``; a bad archive limit is
+        ``ArchiveRefused("archive_limits")``. The message names the setting.
+        Every key is checked before anything is opened. Mirrors PHP
+        `ReadLimits::from`."""
         limits = {} if limits is None else limits
         if not isinstance(limits, dict):
             raise ArchiveRefused("read_limits")
+        read: dict[str, int] = {}
+        archive: dict[str, Any] = {}
         for key, value in limits.items():
-            if key not in DEFAULT_READ_LIMITS or isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                raise ArchiveRefused("read_limits")
-        return cls({**DEFAULT_READ_LIMITS, **limits})
+            if key in DEFAULT_ARCHIVE_LIMITS:
+                archive[key] = value
+                continue
+            known = key in DEFAULT_READ_LIMITS
+            if not known or isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ArchiveRefused.bad_setting("read_limits", key, known)
+            read[key] = value
+        return cls({**DEFAULT_READ_LIMITS, **read}, resolve_limits(archive))
 
     def max(self, limit: str) -> int:
-        return self._limits[limit]
+        return self._limits[limit] if limit in self._limits else self.archive[limit]
 
     def shared_strings(self, count: int) -> None:
         _check("maxSharedStrings", self._limits["maxSharedStrings"], count)
@@ -70,34 +99,73 @@ class ReadLimits:
         self._cells += cells
         _check("maxCells", self._limits["maxCells"], self._cells)
 
-    def worksheet(self, root: Element) -> None:
-        """Count a parsed worksheet: the highest row a `<row r>` or a cell uses,
-        the highest column a cell or a `<col max>` uses, and every `<c>`."""
-        rows = columns = cells = 0
-        for col in find_all(find(root, "cols"), "col"):
-            columns = max(columns, _number(attr(col, "max")))
-        for row in find_all(find(root, "sheetData"), "row"):
-            rows = max(rows, _number(attr(row, "r")))
-            for c in find_all(row, "c"):
-                cells += 1
-                ref = attr(c, "r") or ""
-                m = _CANONICAL.fullmatch(ref)
-                if m is not None:
-                    # The canonical form every writer emits; address() gives the same answer.
-                    letters = m.group(1)
-                    col_index = self._letters.get(letters)
-                    if col_index is None:
-                        col_index = CellAddress.index(letters)
-                        if len(self._letters) < 20000:
-                            self._letters[letters] = col_index
-                    columns = max(columns, col_index + 1)
-                    rows = max(rows, int(m.group(2)))
-                    continue
-                at = address(ref)
-                if at is not None:
-                    columns = max(columns, at[0] + 1)
-                    rows = max(rows, at[1])
-        self.sheet(rows, columns, cells)
+    def worksheet_part(self, xml: bytes | str | None) -> None:
+        """Count a worksheet part BEFORE it is parsed: the highest row a
+        `<row r>` or a cell uses, the highest column a cell or a `<col max>`
+        uses, and every `<c>`. Streams the part (`stream_xml`), building no
+        tree: until 0.13.0 this walked the parsed tree, so a limit refused a
+        10,000,000-cell sheet only after the whole tree existed. Matches what the
+        parse reads: the root's first `cols` and `sheetData`, their `col` / `row`
+        children and a row's `c` children, by local name. The cell count refuses
+        the moment the workbook passes ``maxCells`` (the message says "at
+        least"); a malformed part is counted up to the error. Mirrors PHP
+        `ReadLimits::worksheetPart`."""
+        count = _SheetCount()
+        max_cells = self._limits["maxCells"]
+
+        def visit(depth: int, name: str, attrib: dict[str, str]) -> None:
+            if depth == 1:
+                count.inside = None
+                if name == "cols" and not count.seen_cols:
+                    count.inside, count.seen_cols = "cols", True
+                elif name == "sheetData" and not count.seen_sheet_data:
+                    count.inside, count.seen_sheet_data = "sheetData", True
+                return
+            if depth == 2:
+                count.in_row = False
+                if count.inside == "cols" and name == "col":
+                    count.columns = max(count.columns, _number(attr_local(attrib, "max")))
+                elif count.inside == "sheetData" and name == "row":
+                    count.rows = max(count.rows, _number(attr_local(attrib, "r")))
+                    count.in_row = True
+                return
+            if depth != 3 or not count.in_row or name != "c":
+                return
+            count.cells += 1
+            if count.cells + self._cells > max_cells:
+                raise ReadLimitExceeded("maxCells", max_cells, count.cells + self._cells)
+            count.columns, count.rows = self._cell_extent(attr_local(attrib, "r") or "", count.columns, count.rows)
+
+        stream_xml(xml, 3, visit)
+        self.sheet(count.rows, count.columns, count.cells)
+
+    def shared_strings_part(self, xml: bytes | str | None) -> None:
+        """Count a shared-strings part's `si` entries BEFORE it is parsed.
+        Mirrors PHP `ReadLimits::sharedStringsPart`."""
+        count = 0
+
+        def visit(depth: int, name: str, attrib: dict[str, str]) -> None:
+            nonlocal count
+            if depth == 1 and name == "si":
+                count += 1
+
+        stream_xml(xml, 1, visit)
+        self.shared_strings(count)
+
+    def _cell_extent(self, ref: str, columns: int, rows: int) -> tuple[int, int]:
+        """The extent one cell address adds: (columns, rows) after it."""
+        m = _CANONICAL.fullmatch(ref)
+        if m is not None:
+            # The canonical form every writer emits; address() gives the same answer.
+            letters = m.group(1)
+            col_index = self._letters.get(letters)
+            if col_index is None:
+                col_index = CellAddress.index(letters)
+                if len(self._letters) < 20000:
+                    self._letters[letters] = col_index
+            return max(columns, col_index + 1), max(rows, int(m.group(2)))
+        at = address(ref)
+        return (columns, rows) if at is None else (max(columns, at[0] + 1), max(rows, at[1]))
 
 
 def address(value: str) -> tuple[int, int] | None:

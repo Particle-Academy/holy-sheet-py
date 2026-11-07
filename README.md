@@ -140,9 +140,64 @@ except ReadLimitExceeded as e:
 ```
 
 `ReadLimitExceeded` is an `ArchiveRefused` (reason `read_limit`). The archive
-limits still apply first and are the tighter bound today: a worksheet part over
-64 MiB is refused, which 10 mixed columns reach at about 120,000 rows. PHP and
-Node take the same options and refuse with the same reasons and messages.
+limits apply first: at the defaults a worksheet part over 64 MiB is refused,
+which 10 mixed columns reach at about 120,000 rows. Since 0.13 they are set
+through the same `limits`; see [Large workbooks](#large-workbooks). PHP and Node
+take the same options and refuse with the same reasons and messages.
+
+### Large workbooks
+
+Every limit a read enforces is a setting (0.13+), in `read()` and
+`describe()`'s `limits`: `maxArchiveBytes` (default 64 MiB), `maxEntries`
+(16,384), `maxPartBytes` (64 MiB), `maxExpandedBytes` (256 MiB),
+`maxCompressionRatio` (1,000), `maxRows` (1,048,576), `maxColumns` (16,384),
+`maxCells` (20,000,000), `maxSharedStrings` (20,000,000).
+`DEFAULT_ARCHIVE_LIMITS` and `DEFAULT_READ_LIMITS` hold the defaults. The keys
+are PHP's.
+
+```python
+holy_sheet.read(data, limits={"maxPartBytes": 160 * 1048576, "maxCells": 2_500_000})
+```
+
+A refusal names the limit to raise (`e.limit`, `e.max`, `e.actual`). The byte
+limits are checked from the zip's central directory before anything is
+inflated, and `describe()` refuses a file over `maxArchiveBytes` before reading
+it. Rows, columns, cells and shared strings are counted by streaming each part
+through expat with nothing built, before it is parsed, and the cell count stops
+the moment it passes `maxCells`. Measured, 500,000 rows x 10 columns (a 275 MB
+sheet part): refused at the defaults in 0.01 s at a 40 MiB process peak; with
+the part limits raised and `maxCells` at 1,000,000, refused in 4.1 s at 591 MiB.
+
+Measured, CPython 3.13, Windows 11, one read per process, every limit raised to
+admit the file (peak is the process's committed memory). PHP and Node are the
+sibling packages on the same files.
+
+| Rows x columns | Cells | Sheet part | Python | PHP | JavaScript |
+|---|---|---|---|---|---|
+| 100,000 x 10 | 1,100,010 | 59 MB | 19.6 s, 1.1 GB | 12.5 s, 1.6 GB | 7.1 s, 1.5 GB |
+| 250,000 x 10 | 2,500,010 | 137 MB | 52.4 s, 2.4 GB | 26.4 s, 3.6 GB | 18.2 s, 2.9 GB |
+| 500,000 x 10 | 5,000,010 | 275 MB | 98.4 s, 4.8 GB | 54.0 s, 7.2 GB | 38.6 s, 6.0 GB |
+| 100,000 x 50 | 5,000,050 | 284 MB | 94.5 s, 4.9 GB | 59.8 s, 7.3 GB | 38.7 s, 6.1 GB |
+| 1,000,000 x 10 | 10,000,010 | 553 MB | 180.8 s, 9.7 GB | over 12 GB (stopped) | refused: too long for one string |
+| 300,000 x 50 | 15,000,050 | 865 MB | over 12 GB (stopped) | over 12 GB (stopped) | refused: too long for one string |
+| 2,000,000 x 10 (two sheets) | 20,000,020 | 2 x 553 MB | over 12 GB (stopped) | over 12 GB (stopped) | refused: too long for one string |
+
+"Stopped" is a run killed at a 12 GB cap; the stopped runs in the last two rows
+were measured before the streaming count landed. By the per-cell figures, this
+port would need about 19 GB and 6 minutes at 2,000,000 x 10 (an estimate).
+
+Per cell this port costs about 1,015 bytes and 18 to 21 microseconds: the least
+memory of the three and the slowest. A sheet part is about 55 to 58 bytes per
+cell, so set `maxPartBytes` at roughly 60 bytes times the cells you want to
+admit. It crosses 30 s at about 1,500,000 cells and 2 GB at about 2,000,000
+(interpolated).
+
+**Recommended:** about **1,500,000 cells** for a read in a request. For a
+**large CRM export** in a background job, up to 2,500,000 cells: `maxPartBytes`
+167,772,160 (160 MiB) and `maxCells` 2,500,000, the rest at their defaults;
+expect about 50 seconds and 2.4 GB. Past that a read in memory is minutes and
+gigabytes: that is where a streaming reader is needed, and this package does
+not have one.
 
 ### CSV
 

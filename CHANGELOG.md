@@ -12,6 +12,69 @@ what moved.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-07
+
+The port of PHP holy-sheet 2.14.0. Owner decision, 2026-11-07: "all
+limitations need to be a config option so apps can build to their use case."
+Every default stays where it was; an app can now set every limit a read
+enforces. Same names, defaults, refusals and messages as PHP and Node, held to
+PHP's cases (`read-options/cases.json`).
+
+### Added
+
+- **Every limit is configurable.** `read(data, limits=...)` and
+  `describe(path, limits=...)` now take the archive guard's five limits beside
+  the four read limits: `maxArchiveBytes`, `maxEntries`, `maxPartBytes`,
+  `maxExpandedBytes`, `maxCompressionRatio`, `maxRows`, `maxColumns`,
+  `maxCells`, `maxSharedStrings`. Until now `read()` and `describe()` opened the
+  archive with no limits passed at all (`open_for_reading`), so a sheet part
+  over 64 MiB (about 120,000 rows of 10 columns) could not be read whatever the
+  app wanted. `DEFAULT_ARCHIVE_LIMITS` is now exported.
+  **What to do:** nothing; every default is unchanged. To read a large export,
+  raise the limits it needs; the README's "Large workbooks" section has the
+  measured memory and time per row.
+- **A refusal over a limit says which one.** `ArchiveRefused` now carries
+  `limit`, `max` and `actual` (None when the refusal is not about a limit), and
+  an `archive_limit` message names them: `Source archive refused: archive_limit
+  (maxPartBytes is 67,108,864; this file needs at least 275,497,997)`.
+
+### Changed
+
+- **The read limits are now counted BEFORE the part is parsed, not after.**
+  The worksheet was parsed into an element tree and counted afterwards, so with
+  `maxPartBytes` raised, a 500,000-row upload grew to 4.8 GB before `maxCells`
+  could refuse it. Rows, columns and cells are now counted by streaming the
+  part through the same expat parser with a target that builds nothing
+  (`stream_xml`), and the cell count refuses the moment the workbook passes
+  `maxCells`; shared strings are counted the same way. Measured peak at
+  refusal, 500,000 rows x 10 columns (a 275,497,997-byte sheet part):
+  - at the **defaults**: refused by `maxPartBytes`, from the zip's central
+    directory before anything is inflated, in 0.01 s at a **40 MiB** process
+    peak;
+  - with the part limits raised and `maxCells` at 1,000,000: refused by
+    `maxCells` in 4.1 s at **591 MiB**, not 4.8 GB.
+  A worksheet or shared-strings part cut off mid-document is counted up to the
+  cut, so a truncated part over a limit is now refused; before, it parsed as
+  malformed and read as empty, unseen by any limit.
+  **What to do:** nothing; reads that succeeded still succeed with the same
+  result. The stream replaces the old walk of the parsed tree, and measured
+  4 to 8% more time on a full read (5,000,050 cells: 94.5 s against 87.6 s).
+- **A bad limit setting names itself**: `read_limits (maxRows must be a
+  positive integer)`, `archive_limits (maxPartBytes must be a positive
+  integer)`, `read_limits (unknown limit "maxBogus")`. The reasons are
+  unchanged. **What to do:** nothing, unless you compare `str(e)` exactly;
+  compare `reason`.
+- **`read()` and `describe()` open the archive once.** The format sniffer
+  opened and inflated every part, then the reader opened them all again.
+
+### Fixed
+
+- **`describe(path)` read the whole file before checking its size.** It
+  called `handle.read()` with no bound, so the archive guard's
+  `maxArchiveBytes` only applied after the file was in memory. It now refuses
+  before reading, as PHP and Node do, and reads no more than the limit.
+  **What to do:** nothing.
+
 ## [0.12.0] - 2026-11-07
 
 The port of PHP holy-sheet 2.13.0, approved in the change council as
