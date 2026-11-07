@@ -80,8 +80,10 @@ Module-level functions — no class to instantiate, no DI container:
 | `validate_and_repair(schema)` | `{schema, errors, repairs}` |
 | `to_bytes(schema)` | `bytes` |
 | `write(schema, path)` | `{path, bytes, sheets}` — synchronous |
-| `read(data)` | schema, from xlsx or ods **bytes** |
-| `describe(path)` | schema, from an xlsx or ods **path** |
+| `read(data, *, sheet=None, limits=None)` | schema, from xlsx or ods **bytes** |
+| `describe(path, *, sheet=None, limits=None)` | schema, from an xlsx or ods **path** |
+| `rows(sheet, *, formulas="computed", max_cells=None)` | a read sheet as rows of values |
+| `to_csv(table, options=None)` | `{text, report}`: one portable table as RFC 4180 CSV |
 | `lint(schema)` | `[{sheet, address, formula, error, hint}]` |
 | `from_array(rows, headers=None, sheet_name="Sheet 1", options=None)` | schema, with inferred column types |
 | `from_csv(csv_or_path, options=None)` | schema, from CSV content **or** a path |
@@ -100,7 +102,63 @@ Lower-level services are exported under their peer names for when you want to
 inject them: `Validator`, `Repairer`, `Normalizer`, `FormulaLinter`, `Inference`,
 `Theme`, `XlsxWriter`, `XlsxReader`, `OdsReader`, `FormatSniffer`, `ArrayBuilder`,
 `CsvBuilder`, `CellAddress`, `SheetDiff`, `SheetReducer`, `SheetOpSchema`,
-`SchemaException`, `UnsupportedFormatException`.
+`SchemaException`, `UnsupportedFormatException`, `ArchiveRefused`,
+`ReadLimitExceeded`, `SheetNotFoundException`, `OptionsInvalid`.
+
+### Reading: one sheet, rows, and read limits
+
+```python
+import holy_sheet
+from holy_sheet import ReadLimitExceeded
+
+# Only the sheet you name is parsed. Names match exactly; an unknown one raises
+# SheetNotFoundException, whose message lists every sheet.
+schema = holy_sheet.read(data, sheet="Contacts")
+
+# The sheet as rows of values in column order. A blank row in the middle is [],
+# so rows[n - 1] is always row n; trailing blank rows are not padded. A formula
+# gives its cached computedValue; formulas="formula" gives "=SUM(B2:B9)". A
+# merged region's value is at its top-left cell only.
+rows = holy_sheet.rows(schema["sheets"][0])
+```
+
+A read is bounded by what the file expands into, not only its bytes:
+`maxRows` (default 1,048,576, per sheet), `maxColumns` (16,384, per sheet),
+`maxCells` (20,000,000, the workbook) and `maxSharedStrings` (20,000,000), in
+`DEFAULT_READ_LIMITS`. Each is checked before what it counts is built. Override
+any with a positive `int`; anything else (a `bool` included) is
+`ArchiveRefused` with reason `read_limits`. The keys are PHP's, like the archive
+limits'.
+
+```python
+try:
+    holy_sheet.read(data, limits={"maxRows": 200000})
+except ReadLimitExceeded as e:
+    # e.limit "maxRows", e.max 200000, e.actual 250001, and str(e) for people:
+    # "Spreadsheet refused: a sheet has 250,001 rows, over the limit of 200,000 rows (maxRows) by 50,001."
+    ...
+```
+
+`ReadLimitExceeded` is an `ArchiveRefused` (reason `read_limit`). The archive
+limits still apply first and are the tighter bound today: a worksheet part over
+64 MiB is refused, which 10 mixed columns reach at about 120,000 rows. PHP and
+Node take the same options and refuse with the same reasons and messages.
+
+### CSV
+
+`to_csv(table, options=None)` writes one portable table
+(`{"rows": [{"cells": [{"t", "v", "colSpan"?, "rowSpan"?}]}]}`) as RFC 4180
+CSV, byte for byte as PHP's `Exchange\Csv::toCsv()`, and returns `{"text",
+"report"}`. Options are PHP's: `{"escapeFormulas": bool, "display": bool}`.
+Formula-injection escaping is on by default: a string or error field starting
+with `=`, `+`, `-`, `@`, TAB or CR gets a leading `'` and is reported
+`csv-escaped`. Turn it off only from host code, never from agent input.
+
+### Borders
+
+Each border side is a bare hex colour, which is a thin line, or
+`{"style": ..., "color": ...}` with `style` one of `thin`, `medium`, `thick`,
+`dashed`, `dotted`, `double`: `"format": {"borderBottom": {"style": "double", "color": "#111827"}}`.
 
 ### Reading OpenDocument spreadsheets
 

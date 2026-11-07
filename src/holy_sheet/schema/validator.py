@@ -19,6 +19,7 @@ from typing import Any
 from ..exceptions import SchemaException
 from ..helpers.php import entries, is_array, is_list, is_numeric_string, numeric_string_to_number, php_to_string, type_of
 from ..workbook.cell_address import CellAddress
+from ..workbook.cell_format import BORDER_STYLES
 from ..workbook.chart_range import ChartRange
 from . import column_widths, data_validations
 from .normalizer import CHART_TYPES
@@ -225,6 +226,8 @@ class Validator:
                                     '{"value": "x", "format": {...}}.',
                                 )
                             )
+                        elif isinstance(cell, dict) and isinstance(cell.get("format"), dict):
+                            errors.extend(_validate_borders(cell["format"], f"{path}.rows[{key}][{cell_key}].format"))
 
         if _has(sheet, "cells"):
             cells = _get(sheet, "cells")
@@ -305,6 +308,12 @@ class Validator:
                     elif not numeric or float(numeric_string_to_number(px) if isinstance(px, str) else px) < 0:
                         errors.append(_error(f"{path}.rowHeights.{row}", "a non-negative number of pixels", type_of(px), px,
                                              "A height is a number of pixels, like 28 (20 is a default row)."))
+
+        cells_map = _get(sheet, "cells") if _has(sheet, "cells") else None
+        if isinstance(cells_map, dict):
+            for address, cell in cells_map.items():
+                if isinstance(cell, dict) and isinstance(cell.get("format"), dict):
+                    errors.extend(_validate_borders(cell["format"], f"{path}.cells.{address}.format"))
 
         if _has(sheet, "charts"):
             errors.extend(_validate_charts(sheet["charts"], path, php_to_string(_get(sheet, "name"))))
@@ -424,6 +433,42 @@ class Validator:
                 )
 
         return errors
+
+
+def _validate_borders(fmt: dict[str, Any], path: str) -> list[dict[str, Any]]:
+    """Each border side is a bare colour (a thin line, as it always was) or
+    ``{style?, color?}``. A bare string is not checked further. Mirrors PHP
+    `Validator::validateBorders`, texts included."""
+    errors: list[dict[str, Any]] = []
+    styles = ", ".join(BORDER_STYLES)
+    for side in ("borderTop", "borderRight", "borderBottom", "borderLeft"):
+        if side not in fmt or isinstance(fmt[side], str):
+            continue
+        border = fmt[side]
+        # PHP's `[]` is the empty map, so an empty list is `{}` here.
+        if isinstance(border, list) and not border:
+            border = {}
+        if not isinstance(border, dict):
+            errors.append(_error(f"{path}.{side}", 'a colour like "#000000", or {"style", "color"}', type_of(border), border,
+                                 'A bare colour is a thin border: "#000000". For another line style use '
+                                 f'{{"style": "dashed", "color": "#000000"}}; styles: {styles}.'))
+            continue
+        for key, value in border.items():
+            if key == "style":
+                if not isinstance(value, str) or value not in BORDER_STYLES:
+                    errors.append(_error(f"{path}.{side}.style", f"one of: {styles}", type_of(value), value,
+                                         f"The line style of this side: {styles}. Omit it for thin."))
+            elif key == "color":
+                if not isinstance(value, str) or _HEX_COLOUR.fullmatch(value) is None:
+                    errors.append(_error(f"{path}.{side}.color", "#RRGGBB", type_of(value), value,
+                                         'A hex colour, like "#1F3A5F". Omit it for black.'))
+            else:
+                errors.append(_error(f"{path}.{side}.{key}", "style or color", "unknown key", value,
+                                     'A border side takes only "style" and "color".'))
+    return errors
+
+
+_HEX_COLOUR = re.compile(r"#[0-9A-Fa-f]{6}", re.ASCII)
 
 
 def _error(path: str, expected: str, got: str, value: Any, hint: str) -> dict[str, Any]:

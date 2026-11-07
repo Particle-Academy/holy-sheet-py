@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 from xml.etree.ElementTree import Element
 
-from ..workbook.cell_format import CellFormat
+from ..workbook.cell_format import BORDER_STYLES, CellFormat
 from .format.num_fmt_parser import NumFmtParser
 from .xml import attr, find, find_all, parse_xml_or_none
 
@@ -101,18 +101,22 @@ def _parse_fills(root: Element) -> list[str | None]:
     return fills
 
 
-def _parse_borders(root: Element) -> list[dict[str, str | None]]:
-    borders: list[dict[str, str | None]] = []
+def _parse_borders(root: Element) -> list[dict[str, Any]]:
+    borders: list[dict[str, Any]] = []
     for border in find_all(find(root, "borders"), "border"):
-        record: dict[str, str | None] = {"top": None, "right": None, "bottom": None, "left": None}
+        record: dict[str, Any] = {"top": None, "right": None, "bottom": None, "left": None, "styles": {}}
         for side in ("top", "right", "bottom", "left"):
             edge = find(border, side)
-            if edge is None or not attr(edge, "style"):
+            style = attr(edge, "style") if edge is not None else None
+            if edge is None or not style:
                 continue
             colour = find(edge, "color")
             rgb = attr(colour, "rgb") if colour is not None else None
             if rgb:
                 record[side] = _argb_to_hex(rgb)
+                # One of the styles the writer has; any other Excel style
+                # (hair, mediumDashDot, ...) reads as thin, as it always did.
+                record["styles"][side] = style if style != "thin" and style in BORDER_STYLES else None
         borders.append(record)
     return borders
 
@@ -120,7 +124,7 @@ def _parse_borders(root: Element) -> list[dict[str, str | None]]:
 def _build_cell_format(
     font: dict[str, Any] | None,
     fill: str | None,
-    border: dict[str, str | None] | None,
+    border: dict[str, Any] | None,
     num_fmt: dict[str, Any] | None,
     align: str | None,
 ) -> CellFormat:
@@ -144,6 +148,10 @@ def _build_cell_format(
         border_bottom=border.get("bottom"),
         border_left=border.get("left"),
         currency=num_fmt.get("currency"),
+        border_top_style=(border.get("styles") or {}).get("top"),
+        border_right_style=(border.get("styles") or {}).get("right"),
+        border_bottom_style=(border.get("styles") or {}).get("bottom"),
+        border_left_style=(border.get("styles") or {}).get("left"),
     )
 
 

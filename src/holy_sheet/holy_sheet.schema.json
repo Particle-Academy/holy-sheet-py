@@ -460,18 +460,49 @@
           "maximum": 72
         },
         "borderTop": {
-          "type": "string"
+          "$ref": "#/definitions/Border"
         },
         "borderRight": {
-          "type": "string"
+          "$ref": "#/definitions/Border"
         },
         "borderBottom": {
-          "type": "string"
+          "$ref": "#/definitions/Border"
         },
         "borderLeft": {
-          "type": "string"
+          "$ref": "#/definitions/Border"
         }
       }
+    },
+    "Border": {
+      "description": "One side's border. A bare hex colour (\"#000000\") is a thin line in that colour; an object also picks the line style.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Hex color (#RRGGBB) of a thin line."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "style": {
+              "type": "string",
+              "enum": [
+                "thin",
+                "medium",
+                "thick",
+                "dashed",
+                "dotted",
+                "double"
+              ],
+              "description": "Line style; thin when omitted."
+            },
+            "color": {
+              "type": "string",
+              "description": "Hex color (#RRGGBB); black when omitted."
+            }
+          }
+        }
+      ]
     },
     "CellComment": {
       "type": "object",

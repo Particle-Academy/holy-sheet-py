@@ -31,6 +31,8 @@ from .ops.sheet_op_schema import SheetOpSchema
 from .ops.sheet_reducer import SheetReducer
 from .reader.format_sniffer import FormatSniffer
 from .reader.ods_reader import OdsReader
+from .reader.read_limits import ReadLimits
+from .reader.rows_view import rows_view
 from .reader.xlsx_reader import XlsxReader
 from .schema.formula_linter import FormulaLinter
 from .schema.normalizer import Normalizer
@@ -118,20 +120,44 @@ def write(schema: Any, path: str) -> dict[str, Any]:
     }
 
 
-def read(data: bytes) -> dict[str, Any]:
+def read(data: bytes, *, sheet: str | None = None, limits: dict[str, int] | None = None) -> dict[str, Any]:
     """Round-trip xlsx or ods BYTES back to a Holy Sheet schema.
 
     The format is told apart by content, never by name, and both describe to
     the same schema. Raises `UnsupportedFormatException` (a `RuntimeError`) for
     anything else.
+
+    ``sheet`` reads only the sheet of that exact name (the others are never
+    parsed); an unknown name raises `SheetNotFoundException` listing them all.
+    ``limits`` overrides `DEFAULT_READ_LIMITS` (``maxRows``, ``maxColumns``,
+    ``maxCells``, ``maxSharedStrings``); a read past one raises
+    `ReadLimitExceeded` (an `ArchiveRefused`). Mirrors PHP
+    ``Agent::read($bytes, ['sheet' => ..., 'limits' => [...]])``.
     """
-    return _read_spreadsheet(data, None)
+    return _read_spreadsheet(data, None, sheet, limits)
 
 
-def _read_spreadsheet(data: bytes, path: str | None) -> dict[str, Any]:
+def rows(sheet: dict[str, Any], *, formulas: str = "computed", max_cells: int | None = None) -> list[list[Any]]:
+    """A read sheet as rows of values in column order (row 1 and column A at
+    index 0). A blank row in the middle is ``[]``; trailing blank rows are not
+    padded. A formula gives its cached ``computedValue`` unless
+    ``formulas="formula"``; a merged region's value is at its top-left only.
+    Mirrors PHP ``Agent::rows()`` (its ``maxCells`` is ``max_cells`` here)."""
+    return rows_view(sheet, formulas, max_cells)
+
+
+def _read_options(sheet: Any, limits: Any) -> ReadLimits:
+    """Checked before the file is opened, as PHP's `Agent::readOptions`."""
+    if sheet is not None and not isinstance(sheet, str):
+        raise TypeError("[holy-sheet] read option sheet must be a sheet name (a string)")
+    return ReadLimits.from_options(limits)
+
+
+def _read_spreadsheet(data: bytes, path: str | None, sheet: str | None = None, limits: Any = None) -> dict[str, Any]:
+    read_limits = _read_options(sheet, limits)
     if FormatSniffer.sniff(data, path) == FormatSniffer.ODS:
-        return OdsReader().describe(data)
-    return XlsxReader().describe(data)
+        return OdsReader().describe(data, sheet, read_limits)
+    return XlsxReader().describe(data, sheet, read_limits)
 
 
 def convert_template(data_or_path: bytes | str | os.PathLike[str], to: str | None = None) -> bytes:
@@ -176,17 +202,18 @@ def read_file_bounded(path: str) -> bytes:
     return data
 
 
-def describe(path: str) -> dict[str, Any]:
+def describe(path: str, *, sheet: str | None = None, limits: dict[str, int] | None = None) -> dict[str, Any]:
     """Round-trip an xlsx or ods FILE back to a Holy Sheet schema.
 
     Returns `{"error": "not_found", "path": ...}` for a missing path rather than
     raising -- an agent tool call that returns a structured miss is recoverable,
-    where an exception is a dead end.
+    where an exception is a dead end. ``sheet`` and ``limits`` are `read()`'s.
     """
+    _read_options(sheet, limits)
     if not os.path.isfile(path):
         return {"error": "not_found", "path": path}
     with open(path, "rb") as handle:
-        return _read_spreadsheet(handle.read(), path)
+        return _read_spreadsheet(handle.read(), path, sheet, limits)
 
 
 def tool_definition() -> dict[str, Any]:

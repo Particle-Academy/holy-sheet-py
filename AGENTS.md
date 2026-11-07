@@ -39,7 +39,7 @@ Node is a minor behind on both.
 
 Module-level snake_case functions, mirroring PHP's static `Agent` and TS's
 `Agent` object: `validate`, `validate_and_repair`, `to_bytes`, `write`, `read`,
-`describe`, `lint`, `from_array`, `from_csv`, `tool_definition`, `version`,
+`describe`, `rows`, `to_csv`, `lint`, `from_array`, `from_csv`, `tool_definition`, `version`,
 `diff`, `reduce`, `op_schema`, `equivalent`.
 Lower-level classes keep their peer names (`Validator`, `Normalizer`,
 `XlsxWriter`, `XlsxReader`, `CellAddress`, …) so a reader moving between the

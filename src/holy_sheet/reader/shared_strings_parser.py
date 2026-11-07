@@ -9,18 +9,26 @@ run-level formatting has nowhere to go.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from xml.etree.ElementTree import Element
+
+if TYPE_CHECKING:
+    from .read_limits import ReadLimits
 
 from .xml import find, find_all, parse_xml_or_none, text_of
 
 
 class SharedStringsParser:
     @staticmethod
-    def parse(xml: bytes | str | None) -> list[str]:
+    def parse(xml: bytes | str | None, limits: "ReadLimits | None" = None) -> list[str]:
+        """The table is counted before any entry is rendered (``maxSharedStrings``)."""
         root = parse_xml_or_none(xml)
         if root is None:
             return []
-        return [render_si(si) for si in find_all(root, "si")]
+        items = find_all(root, "si")
+        if limits is not None:
+            limits.shared_strings(len(items))
+        return [render_si(si) for si in items]
 
 
 def render_si(si: Element) -> str:

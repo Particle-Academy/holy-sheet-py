@@ -12,6 +12,85 @@ what moved.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-07
+
+The port of PHP holy-sheet 2.13.0, approved in the change council as
+CC-fancy-0012 and CC-fancy-0013 (owner, plus MOIC and Tynn, 2 of 2 each). The
+same options, defaults, refusals and messages as PHP and Node, held to PHP's own
+cases (`holy-sheet/tests/fixtures/read-options/cases.json`, run by
+`tests/test_read_options.py`).
+
+### Added
+
+- **Read one sheet by name: `read(data, sheet="Contacts")`** (and
+  `describe(path, sheet=...)`). Only that sheet is parsed. Names match exactly.
+  An unknown name raises the new `SheetNotFoundException` (a `ValueError`) with
+  `sheet`, `available` and a message listing every sheet. Works for `.ods` too.
+  **What to do:** nothing; without `sheet` a read returns every sheet as before.
+- **`rows(sheet, *, formulas="computed", max_cells=None)`: a read sheet as rows
+  of values in column order.** A blank row in the middle is `[]`, so indexes are
+  row numbers minus one; trailing blank rows are not padded. A formula gives its
+  cached `computedValue` by default (None when none was cached);
+  `formulas="formula"` gives the formula with its `=`. A merged region's value
+  is at its top-left only. The view refuses past `max_cells` positions
+  (`ReadLimitExceeded`) before it pads anything.
+  **What to do:** nothing; it is new.
+- **Border styles beyond thin.** A border side is a bare colour (thin, byte for
+  byte as before) or `{"style", "color"}`, `style` one of `thin`, `medium`,
+  `thick`, `dashed`, `dotted`, `double` (thin when omitted), `color` `#RRGGBB`
+  (black when omitted). `validate()` reports a bad side at its path, with PHP's
+  texts; `read()` gives a thin side back as the bare colour and another style as
+  the object. Byte-identical to PHP (the `borderStyles` parity fixture). The
+  shared JSON Schema gains a `Border` definition (new SHA-256 in all three
+  repos).
+  **What to do:** nothing. To use a style, give the side a dict.
+- **`to_csv(table, options=None)`, a CSV writer matching PHP's
+  `Exchange\Csv::toCsv()` byte for byte**, text and report: RFC 4180, CRLF line
+  ends, formula-injection escaping on by default (a leading `=`, `+`, `-`, `@`,
+  TAB or CR gets a `'`, reported `csv-escaped`; only host code should pass
+  `{"escapeFormulas": False}`). Options and report keys are PHP's camelCase, so
+  one JSON payload drives all three engines. Bad options raise the new
+  `OptionsInvalid` (a `ValueError`). Held to PHP call for call by
+  `tests/test_csv_parity_php.py` over `holy-sheet/tests/fixtures/csv/tables.json`.
+  One deliberate difference: a table whose rows do not form a grid past the
+  first bad row raises `TypeError` here, where PHP reads past its layout with a
+  warning and writes a garbled row.
+  **What to do:** nothing; it is new. Use it rather than joining fields
+  yourself, which is how formula injection gets in.
+- **Read limits on rows, columns, cells and shared strings**, through
+  `read(data, limits={...})` / `describe(path, limits={...})`, with
+  `DEFAULT_READ_LIMITS` exported: `maxRows` 1,048,576 and `maxColumns` 16,384
+  (Excel's own sheet limits, per sheet), `maxCells` 20,000,000 (the workbook)
+  and `maxSharedStrings` 20,000,000. The keys are PHP's camelCase, like the
+  archive limits'. Each is checked before what it counts is built: a worksheet
+  is counted from its parsed part before one cell exists, the shared-strings
+  table before one string is rendered, an `.ods` repeat before it is expanded. A
+  bad value (a `bool` included) or unknown key is
+  `ArchiveRefused("read_limits")`. A refusal is the new `ReadLimitExceeded` (an
+  `ArchiveRefused`, reason `read_limit`) with `limit`, `max`, `actual` and a
+  message for people: `Spreadsheet refused: a sheet has 1,200,000 rows, over
+  the limit of 1,048,576 rows (maxRows) by 151,424.` Why each default is what
+  it is, and the measurements behind them (1,000,000 x 10 = 10,000,010 cells
+  and 300,000 x 50 = 15,000,050 cells, both admitted), are in PHP holy-sheet's
+  2.13.0 entry; this port measured 905 bytes per cell at its tracemalloc peak
+  reading 1,100,010 cells.
+  **Measured limits you will meet first.** Neither measured workbook can be read
+  today, with or without this release: the archive guard refuses their worksheet
+  parts (553 MB and 865 MB) against `maxPartBytes` of 64 MiB, so 10 mixed
+  columns stop at about 120,000 rows. That is recorded here, not changed.
+  **What to do:** nothing for an ordinary workbook. If you show refusals to
+  people, catch `ReadLimitExceeded` (or keep catching `ArchiveRefused`) and show
+  `str(e)`.
+
+### Security
+
+- **One `<col>` element could exhaust a read.** The column-width reader expanded
+  `<col min="1" max="...">` one column at a time, so a 1.5 KB file with
+  `max="2000000000"` ran a loop two billion iterations long. The default
+  `maxColumns` now refuses it before the loop, and an `.ods` cell repeated
+  across rows and columns is bounded by `maxCells`.
+  **What to do:** upgrade if you read uploaded files.
+
 ## [0.11.0] - 2026-11-07
 
 ### Added

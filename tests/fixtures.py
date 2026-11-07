@@ -197,6 +197,36 @@ SCHEMAS: dict[str, Any] = {
             }
         ],
     },
+    # CC-fancy-0012 (holy-sheet 2.13.0 / 0.12.0): every border style, per side,
+    # beside the bare colour that still means thin and a thin object that must
+    # dedupe with it. Mirrored in holy-sheet-js's parity fixtures.
+    "borderStyles": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Borders",
+                "cells": {
+                    "A1": {"value": "thin", "format": {"borderTop": "#000000"}},
+                    "A2": {"value": "thin object", "format": {"borderTop": {"style": "thin", "color": "#000000"}}},
+                    "B1": {"value": "medium", "format": {"borderBottom": {"style": "medium", "color": "#1F3A5F"}}},
+                    "B2": {"value": "thick", "format": {"borderLeft": {"style": "thick"}}},
+                    "C1": {"value": "dashed", "format": {"borderRight": {"style": "dashed", "color": "#C2410C"}}},
+                    "C2": {"value": "dotted", "format": {"borderTop": {"style": "dotted", "color": "#10B981"}, "borderBottom": "#E5E7EB"}},
+                    "D1": {
+                        "value": "double box",
+                        "format": {
+                            "bold": True,
+                            "borderTop": {"style": "double", "color": "#111827"},
+                            "borderRight": {"style": "double", "color": "#111827"},
+                            "borderBottom": {"style": "double", "color": "#111827"},
+                            "borderLeft": {"style": "double", "color": "#111827"},
+                        },
+                    },
+                    "D2": {"value": "default object", "format": {"borderLeft": {}}},
+                },
+            }
+        ],
+    },
     "multiSheet": {
         "meta": META,
         "sheets": [

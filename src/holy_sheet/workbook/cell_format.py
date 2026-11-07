@@ -37,6 +37,11 @@ class CellFormat:
     #: a column's `format` (PHP's `formatCode`, which PHP's reader also fills
     #: from a foreign code; this port's reader does not yet).
     format_code: str | None = None
+    #: A side's line style when it is not thin (one of BORDER_STYLES); None is thin.
+    border_top_style: str | None = None
+    border_right_style: str | None = None
+    border_bottom_style: str | None = None
+    border_left_style: str | None = None
 
     def key(self) -> tuple:
         """Stable dedup key for StylesRegistry.
@@ -59,6 +64,10 @@ class CellFormat:
             self.border_left,
             self.currency,
             self.format_code,
+            self.border_top_style,
+            self.border_right_style,
+            self.border_bottom_style,
+            self.border_left_style,
         )
 
     def is_empty(self) -> bool:
@@ -88,6 +97,11 @@ class CellFormat:
             value = data.get(key)
             return None if value is None else int(value)
 
+        top, top_style = border_side(data.get("borderTop"))
+        right, right_style = border_side(data.get("borderRight"))
+        bottom, bottom_style = border_side(data.get("borderBottom"))
+        left, left_style = border_side(data.get("borderLeft"))
+
         return CellFormat(
             bold=bool(data.get("bold", False)),
             italic=bool(data.get("italic", False)),
@@ -97,11 +111,15 @@ class CellFormat:
             color=data.get("color"),
             background_color=data.get("backgroundColor"),
             font_size=_int_or_none("fontSize"),
-            border_top=data.get("borderTop"),
-            border_right=data.get("borderRight"),
-            border_bottom=data.get("borderBottom"),
-            border_left=data.get("borderLeft"),
+            border_top=top,
+            border_right=right,
+            border_bottom=bottom,
+            border_left=left,
             currency=data.get("currency"),
+            border_top_style=top_style,
+            border_right_style=right_style,
+            border_bottom_style=bottom_style,
+            border_left_style=left_style,
         )
 
     def merge_with(self, other: "CellFormat | None") -> "CellFormat":
@@ -126,7 +144,34 @@ class CellFormat:
             format_code=other.format_code
             if other.display_format is not None
             else _coalesce(other.format_code, self.format_code),
+            # A side's style travels with its colour: whichever side wins brings its own.
+            border_top_style=other.border_top_style if other.border_top is not None else self.border_top_style,
+            border_right_style=other.border_right_style if other.border_right is not None else self.border_right_style,
+            border_bottom_style=other.border_bottom_style if other.border_bottom is not None else self.border_bottom_style,
+            border_left_style=other.border_left_style if other.border_left is not None else self.border_left_style,
         )
+
+
+#: The line styles a border side can have. `thin` is the default, and a bare colour means it.
+BORDER_STYLES = ("thin", "medium", "thick", "dashed", "dotted", "double")
+
+
+def border_side(side: Any) -> tuple[str | None, str | None]:
+    """One side from the schema: a bare colour (thin), or ``{style?, color?}``
+    (thin and black when omitted). Thin is carried as a None style, so a thin
+    object and the bare colour it means are one format. Mirrors PHP
+    `CellFormat::border` -- including that `[]` is the empty map there."""
+    if isinstance(side, str):
+        return side, None
+    if isinstance(side, list) and not side:
+        side = {}
+    if not isinstance(side, dict):
+        return None, None
+    color = side.get("color") if isinstance(side.get("color"), str) else "#000000"
+    style = side.get("style", "thin")
+    if style is None:
+        style = "thin"
+    return color, style if isinstance(style, str) and style != "thin" and style in BORDER_STYLES else None
 
 
 def _coalesce(preferred, fallback):

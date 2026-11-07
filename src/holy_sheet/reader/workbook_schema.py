@@ -156,14 +156,15 @@ def _format_to_dict(fmt: CellFormat) -> dict[str, Any]:
         out["backgroundColor"] = fmt.background_color
     if fmt.font_size is not None:
         out["fontSize"] = fmt.font_size
-    if fmt.border_top is not None:
-        out["borderTop"] = fmt.border_top
-    if fmt.border_right is not None:
-        out["borderRight"] = fmt.border_right
-    if fmt.border_bottom is not None:
-        out["borderBottom"] = fmt.border_bottom
-    if fmt.border_left is not None:
-        out["borderLeft"] = fmt.border_left
+    # A thin side reads back as the bare colour it always did; another style as {style, color}.
+    for key, colour, style in (
+        ("borderTop", fmt.border_top, fmt.border_top_style),
+        ("borderRight", fmt.border_right, fmt.border_right_style),
+        ("borderBottom", fmt.border_bottom, fmt.border_bottom_style),
+        ("borderLeft", fmt.border_left, fmt.border_left_style),
+    ):
+        if colour is not None:
+            out[key] = colour if style is None else {"style": style, "color": colour}
     if fmt.currency is not None:
         out["currency"] = fmt.currency
     return out

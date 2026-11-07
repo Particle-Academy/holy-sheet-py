@@ -97,8 +97,24 @@ class StylesRegistry:
             "right": fmt.border_right,
             "bottom": fmt.border_bottom,
             "left": fmt.border_left,
+            "styles": {
+                "top": fmt.border_top_style,
+                "right": fmt.border_right_style,
+                "bottom": fmt.border_bottom_style,
+                "left": fmt.border_left_style,
+            },
         }
-        key = ("border", record["top"], record["right"], record["bottom"], record["left"])
+        key = (
+            "border",
+            record["top"],
+            record["right"],
+            record["bottom"],
+            record["left"],
+            fmt.border_top_style,
+            fmt.border_right_style,
+            fmt.border_bottom_style,
+            fmt.border_left_style,
+        )
         if key in self._border_index:
             return self._border_index[key]
         self._borders.append(record)
@@ -175,8 +191,9 @@ class StylesRegistry:
                 if not colour:
                     borders.append(f"<{side}/>")
                 else:
+                    style = (border.get("styles") or {}).get(side) or "thin"
                     borders.append(
-                        f'<{side} style="thin"><color rgb="{_hex_to_argb(colour)}"/></{side}>'
+                        f'<{side} style="{style}"><color rgb="{_hex_to_argb(colour)}"/></{side}>'
                     )
             borders.append("<diagonal/></border>")
         borders.append("</borders>")

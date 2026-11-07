@@ -26,6 +26,8 @@ from .ods import ns
 from .ods.ods_formula import ods_formula_to_a1
 from .ods.ods_styles import OdsStyles
 from .ods.ods_text import paragraphs
+from ..exceptions import SheetNotFoundException
+from .read_limits import ReadLimits
 from .workbook_schema import WorkbookSchema
 from .xml import parse_xml_or_none
 
@@ -66,10 +68,17 @@ class _ReadCell:
 
 
 class OdsReader:
-    def describe(self, data: bytes) -> dict[str, Any]:
-        return WorkbookSchema.from_workbook(self.read_workbook(data))
+    def __init__(self) -> None:
+        #: The running read limits for this read; set by read_workbook().
+        self._limits: ReadLimits | None = None
 
-    def read_workbook(self, data: bytes) -> Workbook:
+    def describe(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
+        return WorkbookSchema.from_workbook(self.read_workbook(data, only, limits))
+
+    def read_workbook(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
+        """`only` reads just the table of that name; an unknown name raises
+        SheetNotFoundException listing every table."""
+        self._limits = limits if limits is not None else ReadLimits.from_options()
         archive = open_for_reading(data)
         kind = source_kind(archive)
 
@@ -88,9 +97,15 @@ class OdsReader:
 
         sheets: list[Sheet] = []
         spreadsheet = ns.child(ns.child(content_root, ns.OFFICE, "body"), ns.OFFICE, "spreadsheet")
-        for table in ns.children_in(spreadsheet, ns.TABLE):
-            if ns.local(table) == "table":
-                sheets.append(self._read_sheet(table, style_index))
+        tables = [t for t in ns.children_in(spreadsheet, ns.TABLE) if ns.local(t) == "table"]
+        if only is not None:
+            names = [ns.attr(t, ns.TABLE, "name") or "" for t in tables]
+            if only not in names:
+                raise SheetNotFoundException(only, names)
+        for table in tables:
+            if only is not None and (ns.attr(table, ns.TABLE, "name") or "") != only:
+                continue
+            sheets.append(self._read_sheet(table, style_index))
 
         return Workbook(sheets=sheets, meta=_read_meta(meta) if meta is not None else {}, source_kind=kind)
 
@@ -154,6 +169,18 @@ class OdsReader:
         if not entries:
             state["row"] += repeat
             return
+
+        # The whole repeat block is counted before any of it is expanded: one
+        # cell repeated across a sheet is billions of cells from one element.
+        if self._limits is not None:
+            rows_here = min(repeat, MAX_ROWS - state["row"])
+            values = 0
+            width = 0
+            for col, read, _span, _style in entries:
+                width = max(width, col + 1)
+                if read is not None:
+                    values += 1
+            self._limits.sheet(state["row"] + rows_here, width, values * rows_here)
 
         r = 0
         while r < repeat and state["row"] < MAX_ROWS:

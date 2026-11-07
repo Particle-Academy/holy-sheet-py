@@ -55,6 +55,60 @@ class ArchiveRefused(RuntimeError):
         super().__init__(f"Source archive refused: {reason}")
 
 
+_LIMIT_WORDS = {
+    "maxRows": ("a sheet has", "row", "rows", ""),
+    "maxColumns": ("a sheet has", "column", "columns", ""),
+    "maxCells": ("the workbook has at least", "cell", "cells", "at least "),
+    "maxSharedStrings": ("the workbook has", "shared string", "shared strings", ""),
+}
+
+
+class ReadLimitExceeded(ArchiveRefused):
+    """A read stopped because the spreadsheet is bigger than a read limit allows.
+
+    Mirrors PHP and Node `ReadLimitExceeded`: `reason` is ``read_limit``,
+    `limit` names which one (``maxRows``, ``maxColumns``, ``maxCells``,
+    ``maxSharedStrings``), `max` is its value and `actual` what the file holds.
+    The message says the same in plain words, for showing to a person. It is an
+    `ArchiveRefused`, so an existing ``except ArchiveRefused`` still catches it.
+    """
+
+    def __init__(self, limit: str, max: int, actual: int, subject: str | None = None) -> None:  # noqa: A002
+        super().__init__("read_limit")
+        self.limit = limit
+        self.max = max
+        self.actual = actual
+        what, one, many, by = _LIMIT_WORDS[limit]
+        if subject is not None:
+            what, by = subject, ""
+
+        def unit(n: int) -> str:
+            return one if n == 1 else many
+
+        message = (
+            f"Spreadsheet refused: {what} {actual:,} {unit(actual)}, "
+            f"over the limit of {max:,} {unit(max)} ({limit}) by {by}{actual - max:,}."
+        )
+        self.args = (message,)
+
+    def __str__(self) -> str:
+        return str(self.args[0])
+
+
+class SheetNotFoundException(ValueError):
+    """`read(data, sheet=...)` named a sheet the workbook does not have.
+
+    Names match exactly; the message lists every one. Mirrors PHP
+    `SheetNotFoundException` (an `InvalidArgumentException` there).
+    """
+
+    def __init__(self, sheet: str, available: list[str]) -> None:
+        self.sheet = sheet
+        self.available = available
+        names = ", ".join(f'"{name}"' for name in available)
+        super().__init__(f'[holy-sheet] no sheet named "{sheet}"; this workbook has: {names}')
+
+
 _TEMPLATE_MESSAGES = {
     "macro_enabled": "Macro-enabled templates (.xltm) are refused: re-save it as an .xltx in Excel.",
     "family_mismatch": "This package declares a template of a different kind than its contents.",

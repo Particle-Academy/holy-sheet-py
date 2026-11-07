@@ -175,6 +175,50 @@ def php_ops(calls: list[dict]) -> list[dict]:
     return results
 
 
+PHP_CSV_SCRIPT = REPO_ROOT / "scripts" / "php_csv.php"
+
+
+def php_csv(calls: list[dict]) -> list[dict]:
+    """Run a batch of `HolySheet\\Exchange\\Csv::toCsv` calls in PHP; one result per call.
+
+    Each call is `{"table": ..., "options": ...}`; each result is `{"text",
+    "report"}` or `{"error", "message"}`. See `scripts/php_csv.php`.
+    """
+    binary = php_binary()
+    src = php_src_root()
+    if binary is None or src is None or not PHP_CSV_SCRIPT.is_file():
+        raise RuntimeError("the PHP oracle is not available; call oracle_available() first")
+
+    with tempfile.TemporaryDirectory(prefix="holy-sheet-csv-") as tmp:
+        calls_path = Path(tmp) / "calls.json"
+        calls_path.write_text(json.dumps(calls), encoding="utf-8")
+        env = dict(os.environ)
+        env[_PHP_SRC_ENV] = str(src)
+        result = subprocess.run([binary, str(PHP_CSV_SCRIPT), str(calls_path)], capture_output=True, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"the PHP csv oracle exited {result.returncode}: "
+                f"{result.stderr.decode('utf-8', 'replace')[:2000]}"
+            )
+        results = json.loads(result.stdout.decode("utf-8"))
+
+    if len(results) != len(calls):
+        raise RuntimeError(f"the PHP csv oracle answered {len(results)} of {len(calls)} calls")
+    return results
+
+
+def csv_tables() -> list[dict]:
+    """The CSV parity inputs, which live in the PHP repo so both ports run the same ones."""
+    src = php_src_root()
+    path = src.parent / "tests" / "fixtures" / "csv" / "tables.json" if src is not None else None
+    if path is None or not path.is_file():
+        raise RuntimeError(
+            "CSV parity inputs not found. They live in the PHP holy-sheet repo at "
+            f"tests/fixtures/csv/tables.json; check it out beside this one or set {_PHP_SRC_ENV}."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))["calls"]
+
+
 def ods_fixtures_dir() -> Path:
     """The ODS fixtures, which live in the PHP repo so all three engines read the same bytes.
 

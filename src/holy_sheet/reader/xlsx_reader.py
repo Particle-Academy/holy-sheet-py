@@ -23,7 +23,9 @@ from ..workbook.cell_comment import CellComment
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
 from . import chart_parser
+from ..exceptions import SheetNotFoundException
 from .comments_parser import CommentsParser
+from .read_limits import ReadLimits
 from .rels_parser import RelsParser
 from .shared_strings_parser import SharedStringsParser
 from .styles_parser import StylesParser
@@ -33,16 +35,21 @@ from .xml import attr, find, find_all, parse_xml_or_none, text_of
 
 
 class XlsxReader:
-    def describe(self, data: bytes) -> dict[str, Any]:
-        return WorkbookSchema.from_workbook(self.read_workbook(data))
+    def describe(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> dict[str, Any]:
+        return WorkbookSchema.from_workbook(self.read_workbook(data, only, limits))
 
-    def read_workbook(self, data: bytes) -> Workbook:
+    def read_workbook(self, data: bytes, only: str | None = None, limits: ReadLimits | None = None) -> Workbook:
+        """`only` reads just the sheet of that exact name (the others are never
+        parsed); an unknown name raises SheetNotFoundException. Mirrors PHP
+        `XlsxReader::readArchive`."""
+        if limits is None:
+            limits = ReadLimits.from_options()
         archive = open_for_reading(data)
         kind = source_kind(archive)
 
         with archive:
             styles_index = StylesParser.parse(_read(archive, "xl/styles.xml"))
-            shared_strings = SharedStringsParser.parse(_read(archive, "xl/sharedStrings.xml"))
+            shared_strings = SharedStringsParser.parse(_read(archive, "xl/sharedStrings.xml"), limits)
 
             workbook_xml = _read(archive, "xl/workbook.xml")
             if workbook_xml is None:
@@ -56,6 +63,11 @@ class XlsxReader:
             # The 1904 date system: `<workbookPr date1904="1"/>` (or "true").
             date1904 = attr(find(root, "workbookPr"), "date1904") in ("1", "true")
 
+            if only is not None:
+                names = [attr(s, "name") or "" for s in find_all(find(root, "sheets"), "sheet")]
+                if only not in names:
+                    raise SheetNotFoundException(only, names)
+
             sheets: list[Sheet] = []
             i = 0
             for sheet_el in find_all(find(root, "sheets"), "sheet"):
@@ -66,6 +78,13 @@ class XlsxReader:
                     continue
 
                 sheet_path = "xl/" + target.lstrip("/")
+                if only is not None and name != only:
+                    # The sheet rels part is named by the position among READ
+                    # sheets, so a skipped sheet advances it exactly when a full
+                    # read would have.
+                    if sheet_path in archive.names():
+                        i += 1
+                    continue
                 worksheet_xml = _read(archive, sheet_path)
                 if worksheet_xml is None:
                     continue
@@ -81,7 +100,7 @@ class XlsxReader:
                             comments.update(CommentsParser.parse(comments_xml))
 
                 sheet = WorksheetParser.parse(
-                    worksheet_xml, name, styles_index, comments, shared_strings
+                    worksheet_xml, name, styles_index, comments, shared_strings, limits
                 )
 
                 # Charts: sheet rels -> drawing -> drawing rels -> chart parts (see PHP).

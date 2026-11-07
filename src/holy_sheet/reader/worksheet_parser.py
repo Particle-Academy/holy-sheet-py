@@ -12,6 +12,7 @@ from ..workbook.cell_comment import CellComment
 from ..workbook.cell_format import CellFormat
 from ..workbook.merged_region import MergedRegion
 from ..workbook.sheet import Sheet
+from .read_limits import ReadLimits
 from .shared_strings_parser import render_si
 from .xml import attr, find, find_all, parse_xml_or_none, text_of
 
@@ -26,10 +27,14 @@ class WorksheetParser:
         styles_index: list[CellFormat | None],
         comments: dict[str, CellComment] | None = None,
         shared_strings: list[str] | None = None,
+        limits: ReadLimits | None = None,
     ) -> Sheet:
         root = parse_xml_or_none(worksheet_xml)
         if root is None:
             return Sheet(name=name)
+        # Counted from the parsed part before one Cell is built.
+        if limits is not None:
+            limits.worksheet(root)
 
         return Sheet(
             name=name,
