@@ -305,6 +305,18 @@ The Node port omits all three too. `Dumper` is the one with a real case for
 being ported; it is the read-tool counterpart to `describe()` and it is what
 lets an agent make targeted cell edits.
 
+## The agent guide is shipped surface
+
+`src/holy_sheet/agent_guide.md` is what `guide()` returns and what a model
+builds from, so it is part of the API. The PHP copy is canonical. Release
+checklist:
+
+- [ ] guide reviewed against this release's CHANGELOG
+
+`tests/test_agent_guide_covers_the_api.py` fails on an exported `agent`
+function the guide never names; it cannot tell whether a new option or
+behaviour is described, which is what the review is for.
+
 ## Testing
 
 `python -m pytest`. **Write the test first**; a bug fix lands with a test that

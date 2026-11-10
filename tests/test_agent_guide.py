@@ -10,7 +10,7 @@ import hashlib
 
 from holy_sheet import guide
 
-AGENT_GUIDE_SHA256 = "9cc4d5138b6b15447397cc1dd18388c4b558a80c0332743da8b24a79f7223be8"
+AGENT_GUIDE_SHA256 = "06aeb56a5555330ac87cc67455c6c7f1533194b669e0d0359e364ce20a4daaa0"
 
 
 def test_returns_the_guide_and_it_is_the_shared_one() -> None:

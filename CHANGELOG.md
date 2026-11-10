@@ -12,6 +12,22 @@ what moved.
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent guide (`guide()`) catches up with the PHP package's 2.10 to 2.14**
+  (this package's 0.9 to 0.13). New: building a large or formula-heavy workbook
+  in passes, checking after each; fixing only the cells a lint issue names
+  (`lint` -> ops checked against `op_schema()` -> `reduce`), with a worked
+  example; `diff`, `equivalent` and `validate_and_repair`; data validation;
+  border styles; reading with `sheet` and `limits`, `rows`,
+  `convert_template`, and refusals that name the limit. Byte-identical to the
+  PHP package's copy (new SHA-256 in all three repos). **What to do:** nothing;
+  guide text only, a patch.
+- Dev only: `tests/test_agent_guide_covers_the_api.py` fails when an exported
+  `holy_sheet.agent` function is not named in the guide (snake_case or its
+  camelCase form) and not on its allowlist, where each entry carries its reason
+  (`guide`, `version`). It failed on the old guide, which named none of 12.
+
 ## [0.13.0] - 2026-11-07
 
 The port of PHP holy-sheet 2.14.0. Owner decision, 2026-11-07: "all

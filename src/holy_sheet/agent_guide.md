@@ -4,21 +4,30 @@
   The agent guide for holy-sheet: what makes a workbook professional, and the
   schema idioms that produce it. Canonical copy: the PHP package's
   agent-guide/professional-workbooks.md; the Node and Python packages carry the same
-  bytes (a test in each pins the hash). Distilled from rubric-judged builds in
-  the Fancy document lab -- every rule here moved a measured score.
+  bytes (a test in each pins the hash, and another fails when a public Agent
+  method goes unnamed here). Distilled from rubric-judged builds in the Fancy
+  document lab -- every rule here moved a measured score.
 -->
 
 ## How to use this guide
 
 It is written for an agent and works with any agent loop. Give it to the model
 as part of its instructions (a system prompt, a skill, a rules file), together
-with the package's JSON schema (`Agent::toolDefinition()` / `Agent.toolDefinition()` / `tool_definition()`). Then the procedure is:
+with the package's JSON schema (`Agent::toolDefinition()` / `Agent.toolDefinition()` / `tool_definition()`).
+Method names below are PHP's (`Agent::lint`); Node has the same names on `Agent`
+(`Agent.lint`), and Python has them as snake_case functions (`validate_and_repair`).
 
 1. Read the schema once and plan a workbook in full: structure, every figure,
    every derived number, computed and checked before anything is written.
-2. Build the whole JSON in one go, following the recipes below.
-3. Check it: `Agent::validate` (PHP), `Agent.validate` (Node) or `validate` (Python) returns errors with a hint each.
-4. Write it (`Agent::write` / `Agent.toBytes` / `to_bytes`). If you can render the file and look at it, do,
+2. Build the JSON following the recipes below: in one go for a one-sheet
+   summary; in passes for a large or formula-heavy model (see "Build in passes").
+3. Check it: `Agent::validate` returns schema errors `{path, expected, got, value, hint}`;
+   `Agent::lint` evaluates every formula and returns `{sheet, address, formula, error, hint}`
+   for each that gives `#VALUE!`, `#REF!`, `#NAME?`, `#DIV/0!` or `#CIRC!`. Both empty
+   means clean. `Agent::validateAndRepair` returns `{schema, errors, repairs}`: the
+   schema after conservative repairs, the errors still left, and a note per repair.
+   Log the notes, so you stop emitting the shape that needed one.
+4. Write it (`Agent::write($schema, $path)` / `Agent::toBytes($schema)`). If you can render the file and look at it, do,
    but repair only what you can see is wrong: one-shot "improvements" made
    blind regressed more documents than they fixed.
 
@@ -67,8 +76,14 @@ the sheet from `cells` (keys are A1 addresses) instead:
   `{value:0.184, format:{displayFormat:"percentage", decimals:1}}`.
 - Derived cells: `{formula:"B5/B$8", format:{displayFormat:"percentage", decimals:1}}`
   (formula WITHOUT a leading "=").
+- Codes that must stay text (a zip "007", a phone prefix "+1", a part number "1e5"):
+  `{value:"007"}`. The object form is written exactly as given; a BARE string is
+  coerced, so `"007"` alone becomes the number 7.
 - Total row: `{formula:"SUM(B5:B7)", format:{bold:true, displayFormat:"currency", decimals:0, borderTop:"#111827", backgroundColor:"#F3F4F6"}}`,
   and style the label and blank cells in that row the same way so the band is continuous.
+- Borders: a bare colour is a thin line. For a heavier rule give the side an object,
+  `borderTop:{style:"double", color:"#111827"}` (a grand total) or `style:"medium"`;
+  styles are `thin`, `medium`, `thick`, `dashed`, `dotted`, `double`.
 - Notes last (below the chart, when there is one): `{value:"Notes", format:{bold:true}}`
   then one definition per row in `#4B5563` (dark enough to read; not pale grey italic).
 - `frozenRows: 4` (title block + header stay visible), `columnWidths` in pixels:
@@ -85,6 +100,31 @@ the sheet from `cells` (keys are A1 addresses) instead:
   so the page break can never cut the chart in half. Only a long data table (more than
   ~40 rows) uses `fitToWidth:true` instead, and then its chart goes on its own sheet.
   Use landscape when the table is wider than ~650px. Every workbook carries a print setup.
+
+## Inputs people will type into: data validation
+
+An input cell or a template column that a person fills in gets a rule, so a bad
+entry is stopped at the keyboard instead of breaking a formula later. Put rules in
+the sheet's `dataValidations` list:
+
+```
+dataValidations: [
+  {range: "B5:B500", type: "list", values: ["Open", "Won", "Lost"]},
+  {range: "C5:C500", type: "list", source: "'Lists'!A2:A20"},
+  {range: "D5:D500", type: "decimal", operator: "between", min: 0, max: 1,
+   error: {style: "stop", title: "Rate", text: "Enter a rate between 0% and 100%."}},
+  {range: "B3", type: "whole", operator: "greaterThan", value: 0,
+   prompt: {title: "Units", text: "Units sold this quarter."}}
+]
+```
+
+- `list` is a dropdown: inline `values` (no commas, 255 characters in all) or cells
+  through `source`, never both. A long or shared list goes on a "Lists" sheet.
+- `whole`, `decimal`, `date` (`"YYYY-MM-DD"`) and `textLength` take an `operator`:
+  `between` / `notBetween` with `min` and `max`, every other one with `value`.
+- A template's range runs well past the sample rows (`B5:B500`). For exactly a
+  `columns` column's data rows, set `validation` on the column and leave `range` off.
+- Validations are written, not read back: `read()` does not return them yet.
 
 ## A chart, whenever the point is a comparison
 
@@ -119,6 +159,7 @@ charts: [{
 - **Type.** `bar` (horizontal) for categories with names longer than a word, and for
   ranking; `column` for up to ~6 short categories; `line` for a trend over time
   periods; `pie` only for 2-5 parts of one whole, and never when a value is negative.
+  A bar or column chart of non-negative values starts its axis at zero by itself.
 - **Ranges are the data rows only**, never the header or the total row: a total
   plotted beside its parts dwarfs them.
 - **Title states the finding**, like the key point ("EMEA led Q3 revenue"), not
@@ -139,10 +180,120 @@ charts: [{
   variance vs average; total row; a one-line "Key point" cell above the notes stating
   the finding in words (e.g. "EMEA delivered 48.5% of revenue and grew fastest").
 - **Model with inputs:** an "Inputs" block (light yellow fill #FEF9C3 on input cells,
-  labelled), calculations referencing the inputs by cell, outputs in a separate
-  clearly labelled block. Use separate sheets when the model is larger than one screen.
+  labelled, each with a data validation), calculations referencing the inputs by cell,
+  outputs in a separate clearly labelled block. Use separate sheets when the model is
+  larger than one screen.
 - **Detail + summary:** a "Summary" sheet first (the one that opens), a "Data" sheet with
   the full table; the summary's figures are formulas into Data.
+- **Starting from rows you already have:** `Agent::fromArray($rows, $headers, $sheetName, $options)`
+  or `Agent::fromCsv($csvOrPath, $options)` builds a typed `columns` schema; then move it
+  into `cells` under a title block for anything a reader will see.
+
+## Build a large or formula-heavy workbook in passes
+
+One JSON of several sheets and hundreds of formulas, emitted in one go, fails in
+ways that are expensive to find. Build it in passes, and check after each:
+
+1. **Inputs.** Every assumption on an "Inputs" sheet, labelled, with units, an
+   input fill and a validation. `Agent::validate` -> empty.
+2. **Calculations and scenarios.** Sheets whose cells are formulas into Inputs
+   (`Inputs!$B$3`), one scenario per column or per sheet, never a typed copy of an
+   input. `Agent::validate` and `Agent::lint` -> both empty before you go on.
+3. **Analysis.** What the reader came for, built on the calculation sheets: a
+   sensitivity matrix (one input down the rows, another across the columns, each
+   cell the output formula with those two inputs swapped in), a break-even
+   (`Fixed / (Price - Variable cost)`), a scenario comparison with its chart.
+   `Agent::lint` again: a reference into an earlier pass is where `#REF!` appears.
+4. **Presentation.** Title blocks, formats, widths, notes, print setup; then write once.
+
+Each pass ADDS sheets or cells to the schema you already checked; do not re-emit
+the earlier passes. If a check fails, fix it before the next pass, as below.
+
+## After a lint refusal, fix only the cells it names
+
+A lint issue names one cell. Fix that cell with an op; never regenerate the
+workbook, which rewrites hundreds of cells that were right and usually breaks some.
+
+- `Agent::lint(array $schema): array` -- the issues, each `{sheet, address, formula, error, hint}`.
+- `Agent::opSchema(): array` -- the JSON Schema of one op (a `oneOf` over `set_cell`,
+  `set_range`, `clear_cell`, `insert_rows`, `delete_rows`, `insert_columns`,
+  `delete_columns`, `add_sheet`, `remove_sheet`, `rename_sheet`, `move_sheet`,
+  `replace_sheet`, `set_merged_regions`, `set_column_widths`, `set_frozen`, `set_meta`,
+  `set_workbook`). Give it to your edit tool as its parameters, or check each op against it.
+- `Agent::reduce(array $schema, array $opOrOps): array` -- applies one op or a list
+  and returns the new schema. An op naming a sheet that is not there is skipped.
+
+```
+$issues = Agent::lint($schema);
+// [{"sheet":"Model","address":"B2","formula":"(B1-Inputs!B3)/Inputs!B4",
+//   "error":"#DIV/0!","hint":"Division by zero — the divisor evaluated to 0."}]
+
+$ops = [['type' => 'set_cell', 'sheet' => 'Model', 'address' => 'B2',
+         'formula' => '(B1-Inputs!B3)/B1']];   // the cell lint named, nothing else
+$schema = Agent::reduce($schema, $ops);
+Agent::lint($schema);   // []
+```
+
+`set_cell` keeps the cell's `format` and `comment` when you omit them (null clears
+them) and clears `formula` / `computedValue` when you omit those. Then lint again:
+fixing one cell can surface an error in a cell that reads it.
+
+Lint follows Excel: `IF` evaluates only the branch it takes, so `IF(B1=0,0,A1/B1)`
+lints clean; `%` is postfix (`50%` is 0.5); `^` binds tighter than `*`. A `#NAME?`
+hint starts `Syntax error:` or `Unknown function X`; the vocabulary is the one in the
+hint, and `IFERROR` is not in it (guard with `IF` instead).
+
+## Revisions: diff, equivalent, reduce
+
+- `Agent::diff($a, $b)` is the list of ops that turns schema `$a` into `$b`;
+  `Agent::reduce($a, Agent::diff($a, $b))` is `$b`. One changed cell is one `set_cell`.
+  Show a person the diff of a revision instead of a new file; store
+  `Agent::diff($new, $old)` to keep a version as the ops that restore it. Both must be valid.
+- `Agent::equivalent($a, $b)` is true when the two schemas write the same workbook
+  (a `columns` sheet and the `cells` it becomes are equivalent). Use it to check that
+  a rework changed nothing it should not have, rather than comparing JSON.
+
+## Reading an existing workbook
+
+- `Agent::read($bytesOrPath, $options)` reads an `.xlsx`, `.xltx`, `.ods` or `.ots`
+  (told apart by content) back to this schema, which `write` accepts. A template adds
+  `sourceKind: "template"`. `Agent::describe($path, $options)` is the same from a path
+  (Node: `await Agent.describe(path)`; Python `read` takes bytes, `describe` a path).
+  Options: `sheet` reads ONE sheet by its exact name, and the others are never parsed
+  (an unknown name throws `SheetNotFoundException`, whose message lists every sheet);
+  `limits` raises or lowers the read limits (below).
+- `Agent::rows($sheet, $options)` turns one read sheet into rows of values, row 1 and
+  column A at index 0, a blank row as `[]`. Formulas give their cached value unless
+  `formulas` is `'formula'`. Use it instead of walking `cells`.
+- `Agent::catalog($input)` (PHP) is a cheap index: sheets with used ranges, defined
+  names, tables and charts, each with a selector. Read it before reading everything.
+- `Agent::dumpJson($schema)` (PHP) serialises a schema with every value and formula,
+  for making targeted edits with ops.
+- Dates come back as ISO strings, including a date formula's `computedValue`; files in
+  the 1904 date system read correctly. Formulas are read, never evaluated.
+- **Limits.** Every limit a read enforces is an option: `maxArchiveBytes`,
+  `maxEntries`, `maxPartBytes`, `maxExpandedBytes`, `maxCompressionRatio`, `maxRows`,
+  `maxColumns`, `maxCells`, `maxSharedStrings`. A refusal (`ReadLimitExceeded`, or
+  `ArchiveRefused` with reason `archive_limit`) names the limit, its maximum and what
+  the file needs, e.g. `maxPartBytes is 67,108,864; this file needs at least 275,497,997`.
+  Report that to the person; do not raise a limit on your own, it is the host's setting.
+  A file with a `DOCTYPE` in any part, or a macro-enabled `.xltm` / `.xlsm` template, is
+  refused, never read.
+- `Agent::convertTemplate($bytesOrPath, $to)` turns an `.xltx` / `.ots` template into
+  its `.xlsx` / `.ods` twin or back (`$to` is `document`, `template`, or null to flip),
+  copying every other part byte for byte.
+
+## Moving content between documents (PHP)
+
+- `Agent::extract($input, $selector, $options)` grabs a range (`"Q4!A1:D20"`), a sheet,
+  a defined name (`{name}`) or a table (`{table}`) as portable content, for last-word,
+  dark-slide or fine-print to place. Formulas arrive as cached values; hidden cells are skipped.
+- `Agent::fromPortable($content, $at)` turns portable content into cells at `$at`; inside a
+  workbook you are writing, put `{type:"portable", at:"B4", content}` in a sheet's `insert`
+  list instead. Strings stay text, so content can never become a formula.
+- `Agent::export($input, $target, $options, $policy)` writes `csv`, `markdown` or `xlsx`,
+  and is OFF unless the host's policy enables the target; `Agent::exportToolDefinition($policy)`
+  is the tool to offer, or null when nothing is enabled. Never try to enable a target yourself.
 
 ## Failures we have seen (do not repeat)
 
@@ -169,11 +320,15 @@ charts: [{
   header ("vs avg (pp)").
 - Two versions of one measure (simple and weighted average) with no headline. -> Label
   one as the headline and say why in the notes.
+- A whole model regenerated to fix one `#DIV/0!`, and three cells that were right came
+  back wrong. -> `Agent::reduce` with a `set_cell` for the cell lint named.
+- A zip code column that lost its leading zeros. -> `{value:"02134"}`, not `"02134"`.
 
 ## Before you write the workbook, check
 
 Title and subtitle present and merged; every derived value a formula with a correct
-range; header alignment matches data; totals band continuous; widths fit; frozen
-panes set; negative figures coloured; a chart for the comparison over the data rows
-only, with its subject highlighted and labels matching the cells; `fitToPage` on a
-one-page summary; numbers re-added by hand once. Then write once.
+range; `Agent::validate` and `Agent::lint` both empty; header alignment matches data;
+totals band continuous; widths fit; frozen panes set; input cells validated; negative
+figures coloured; a chart for the comparison over the data rows only, with its subject
+highlighted and labels matching the cells; `fitToPage` on a one-page summary; numbers
+re-added by hand once. Then write once.
