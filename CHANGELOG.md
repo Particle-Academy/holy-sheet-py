@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-10
+
 ### Changed
 
 - **The agent guide (`guide()`) catches up with the PHP package's 2.10 to 2.14**
