@@ -349,7 +349,8 @@ class XlsxWriter:
         s_attr = f' s="{style_idx}"' if style_idx > 0 else ""
 
         if cell.formula is not None:
-            formula = xml_escape(cell.formula.lstrip("="))
+            # Already canonical (no leading "="): Cell.canonical_formula().
+            formula = xml_escape(cell.formula)
             cached = cell.value if cell.cached_value is None else cell.cached_value
             value_xml = "" if cached is None else f"<v>{xml_escape(php_to_string(cached))}</v>"
             return f'<c r="{ref}"{s_attr}><f>{formula}</f>{value_xml}</c>'

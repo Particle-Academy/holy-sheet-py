@@ -349,6 +349,18 @@ def _equivalent_pairs() -> dict[str, tuple[Any, Any]]:
     return cases
 
 
+LEADING_EQUALS: tuple[dict[str, Any], list[dict[str, Any]]] = (
+    {
+        "sheets": [{"name": "Model", "columns": [{"header": "Base", "type": "number"}, {"header": "Scenario", "type": "number"}], "rows": [[100, 0]]}],
+        "meta": {"creator": "Parity", "created": "2026-09-15T00:00:00Z"},
+    },
+    [
+        {"type": "set_cell", "sheet": "Model", "address": "B2", "formula": "=A2*2"},
+        {"type": "set_cell", "sheet": "Model", "address": "C2", "formula": "==B2+1"},
+    ],
+)
+
+
 def _build_cases() -> list[tuple[str, dict[str, Any], Callable[[], Any]]]:
     """(id, the PHP call, the same call in Python)."""
     cases: list[tuple[str, dict[str, Any], Callable[[], Any]]] = []
@@ -402,6 +414,15 @@ def _build_cases() -> list[tuple[str, dict[str, Any], Callable[[], Any]]]:
         ))
 
     cases.append(("opSchema", {"fn": "opSchema"}, lambda: {"schema": holy_sheet.op_schema()}))
+
+    # Reported against 2.14.0: lint read "=A2*2" as a syntax error that write
+    # stripped. reduce keeps the op's text; both linters must read it as write does.
+    lint_schema, lint_ops = _as_json(LEADING_EQUALS[0]), _as_json(LEADING_EQUALS[1])
+    cases.append((
+        "reduceLint: a set_cell formula with a leading =",
+        {"fn": "reduceLint", "schema": lint_schema, "ops": lint_ops},
+        lambda s=lint_schema, o=lint_ops: (lambda r: {"schema": r, "lint": holy_sheet.lint(r)})(holy_sheet.reduce(s, o)),
+    ))
 
     # Where json_encode's depth runs out in SheetDiff::same (PHP 2.3.2). PHP builds
     # the nesting itself, so none of it crosses JSON, whose encoders here recurse.
@@ -463,7 +484,7 @@ def php_results(php_oracle) -> list[dict[str, Any]]:
 
 
 def test_the_batch_covers_every_call_shape() -> None:
-    assert {call["fn"] for _, call, _ in CASES} == {"diff", "reduce", "equivalent", "opSchema", "hunks", "nested"}
+    assert {call["fn"] for _, call, _ in CASES} == {"diff", "reduce", "reduceLint", "equivalent", "opSchema", "hunks", "nested"}
     assert len({case_id for case_id, _, _ in CASES}) == len(CASES)
     assert len(CASES) > 200
 
@@ -480,6 +501,12 @@ def test_python_gives_phps_answer(php_results: list[dict[str, Any]], index: int)
         return
 
     assert _printed(from_python) == _printed(from_php)
+
+
+def test_the_leading_equals_case_lints_clean_in_php(php_results: list[dict[str, Any]]) -> None:
+    """Parity alone would pass with both linters reporting the same false #NAME?."""
+    index = next(i for i, (case_id, _, _) in enumerate(CASES) if case_id.startswith("reduceLint:"))
+    assert php_results[index]["lint"] == []
 
 
 def test_random_runs_actually_change_something(php_results: list[dict[str, Any]]) -> None:

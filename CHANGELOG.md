@@ -12,6 +12,24 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lint` reads a formula with a leading `=` the way `write` does** (PHP
+  holy-sheet 2.14.2). The writer always stripped it (`"=A2*2"` was written
+  `<f>A2*2</f>`), but the linter parsed the raw text and reported `#NAME?`
+  "Syntax error: unexpected '='", so an agent following lint, ops, reduce, lint
+  wrote `"=A2*2"`, was told it was broken, and looped. The stripping now happens
+  once, in `Cell` (`Cell.canonical_formula()`), so every entry point sees the
+  same text; `validate`, `validate_and_repair`, `reduce`, `diff` and
+  `equivalent` already agreed and are pinned by tests. A lint issue's `formula`
+  is now the canonical text (no leading `=`). Nothing to do as a consumer: a
+  formula written either way writes the same bytes as before.
+- `op_schema()` describes `set_cell.formula`: written without the leading `=`, a
+  leading `=` accepted and stripped, byte-identical to PHP's. The agent guide
+  says the same in its lint-and-fix section.
+- Dev only: the ops parity suite lints a replayed `"=..."` formula in both
+  engines (`scripts/php_ops.php` takes `reduceLint`) and requires both clean.
+
 ## [0.13.1] - 2026-11-10
 
 ### Changed

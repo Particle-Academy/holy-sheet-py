@@ -42,7 +42,7 @@ class SheetOpSchema:
         variants = [
             _variant(
                 "set_cell",
-                {"sheet": sheet(), "address": address(), "value": value(), "formula": {"type": "string"}, "computedValue": value(), "format": nullable_object(), "comment": nullable_object()},
+                {"sheet": sheet(), "address": address(), "value": value(), "formula": {"type": "string", "description": "Formula text, canonically written without the leading '=' (e.g. 'A2*2'); a leading '=' is accepted and stripped."}, "computedValue": value(), "format": nullable_object(), "comment": nullable_object()},
                 ["sheet", "address"],
                 "Write one cell. Omitting formula or computedValue clears it; omitting format or comment keeps it; null clears it.",
             ),

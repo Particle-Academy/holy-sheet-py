@@ -238,6 +238,9 @@ Agent::lint($schema);   // []
 them) and clears `formula` / `computedValue` when you omit those. Then lint again:
 fixing one cell can surface an error in a cell that reads it.
 
+Write `formula` without the leading `=` (`'A2*2'`); a leading `=` is accepted and
+stripped, and `lint`, `reduce` and `write` all read the two forms as the same formula.
+
 Lint follows Excel: `IF` evaluates only the branch it takes, so `IF(B1=0,0,A1/B1)`
 lints clean; `%` is postfix (`50%` is 0.5); `^` binds tighter than `*`. A `#NAME?`
 hint starts `Syntax error:` or `Unknown function X`; the vocabulary is the one in the

@@ -15,6 +15,8 @@ declare(strict_types=1);
  *
  *   {"fn": "diff", "a": {...}, "b": {...}}          -> {"ops": [...]}
  *   {"fn": "reduce", "schema": {...}, "ops": ...}   -> {"schema": {...}}
+ *   {"fn": "reduceLint", "schema": {...}, "ops": ...}
+ *                                                   -> {"schema": {...}, "lint": [...]}
  *   {"fn": "equivalent", "a": {...}, "b": {...}}    -> {"equivalent": bool}
  *   {"fn": "opSchema"}                              -> {"schema": {...}}
  *   {"fn": "hunks", "a": [...], "b": [...]}         -> {"hunks": [...]}
@@ -75,6 +77,9 @@ foreach ($calls as $call) {
         $results[] = match ($call['fn']) {
             'diff' => ['ops' => \HolySheet\Agent::diff($call['a'], $call['b'])],
             'reduce' => ['schema' => \HolySheet\Agent::reduce($call['schema'], $call['ops'])],
+            'reduceLint' => (static function (array $reduced): array {
+                return ['schema' => $reduced, 'lint' => \HolySheet\Agent::lint($reduced)];
+            })(\HolySheet\Agent::reduce($call['schema'], $call['ops'])),
             'equivalent' => ['equivalent' => \HolySheet\Agent::equivalent($call['a'], $call['b'])],
             'opSchema' => ['schema' => \HolySheet\Agent::opSchema()],
             'hunks' => ['hunks' => \HolySheet\Ops\SheetDiff::hunks($call['a'], $call['b'])],

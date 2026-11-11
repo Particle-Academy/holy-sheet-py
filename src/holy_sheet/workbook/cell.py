@@ -24,6 +24,20 @@ class Cell:
     comment: CellComment | None = None
     cached_value: CellValue = None
 
+    def __post_init__(self) -> None:
+        # Canonical: no leading "=". Every Cell passes through here, so the
+        # writer and the linter see the same text.
+        if self.formula is not None:
+            object.__setattr__(self, "formula", Cell.canonical_formula(self.formula))
+
+    @staticmethod
+    def canonical_formula(formula: str) -> str:
+        """The one normalisation of formula text: every leading "=" is stripped,
+        so "=A2*2" and "A2*2" are the same formula. Mirrors PHP
+        `Cell::canonicalFormula()`. Until 0.13.2 only the writer stripped it,
+        and lint reported "=A2*2" as a syntax error."""
+        return formula.lstrip("=")
+
     def excel_type(self) -> str:
         """The OOXML `t` attribute this cell needs.
 
