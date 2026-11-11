@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-10
+
 ### Fixed
 
 - **`lint` reads a formula with a leading `=` the way `write` does** (PHP
