@@ -435,11 +435,11 @@ agent gets asked for, with the same declarative-schema shape:
 - **[dark-slide](https://github.com/Particle-Academy/dark-slide)** — `.pptx`
 - **[last-word](https://github.com/Particle-Academy/last-word)** — `.docx`
 
-Part of the [Fancy UI suite](https://ui.particle.academy).
+Part of the [Fancy Dev Kit](https://ui.particle.academy).
 
 ---
 
-## ⭐ Star Fancy UI
+## ⭐ Star Fancy Dev Kit
 
 If this package is useful to you, a quick ⭐ on the repo really helps us build a
 better kit. Thank you!
