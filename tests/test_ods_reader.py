@@ -5,7 +5,7 @@ what the PHP file says about each of them applies here.
 
 PHP's `toBe` checks key ORDER and exact types; Python's `==` on dicts checks
 neither order nor `1 == 1.0 == True`. `_same` compares JSON, which catches all
-three -- including the bool-is-an-int trap this repo's AGENTS.md warns about.
+three -- including the bool-is-an-int trap this repo's CONTRIBUTING.md warns about.
 
 edge.ods is asserted cell by cell in PHP and diffed against PHP wholesale in
 `test_ods_reader_parity_php.py`; the traps a Python port falls into on it are

@@ -4,7 +4,7 @@ A line-by-line port of PHP ``Schema\\DataValidations``. The error paths, wording
 and check order are PHP's, and so are the bytes: ``test_parity_php.py`` diffs
 the worksheet part against PHP's writer on the ``dataValidations`` fixture.
 
-Python traps handled here, each the one the AGENTS.md "Numbers" section warns
+Python traps handled here, each the one the CONTRIBUTING.md "Numbers" section warns
 about: ``bool`` is checked before ``int`` everywhere a type is branched on; a
 key that is present with ``None`` counts as present (PHP's ``array_key_exists``,
 not ``isset``); and a decimal operand goes through ``format_float``, never
