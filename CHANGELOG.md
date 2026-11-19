@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-11-19
+
 ### Fixed
 
 - **A sheet with both a table and cells no longer drops the table.** A sheet
