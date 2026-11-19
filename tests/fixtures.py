@@ -118,6 +118,27 @@ SCHEMAS: dict[str, Any] = {
             }
         ],
     },
+    # A table AND explicit cells on one sheet. The cells overlay the table: B3
+    # overrides the table's value and merges `bold` onto the currency column +
+    # banded-row format beneath it; D1 lands where the table has nothing. Until
+    # the fix this port returned early on `cells` and dropped the table.
+    "cellsOverTable": {
+        "meta": META,
+        "sheets": [
+            {
+                "name": "Report",
+                "columns": [
+                    {"header": "Region"},
+                    {"header": "Revenue", "type": "currency", "currency": "USD"},
+                ],
+                "rows": [["North", 100], ["South", 200]],
+                "cells": {
+                    "B3": {"value": 250, "format": {"bold": True}},
+                    "D1": {"value": "Note", "format": {"italic": True}},
+                },
+            }
+        ],
+    },
     "rowOriented": {
         "meta": META,
         "sheets": [

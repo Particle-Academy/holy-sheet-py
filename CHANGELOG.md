@@ -14,6 +14,17 @@ what moved.
 
 ### Fixed
 
+- **A sheet with both a table and cells no longer drops the table.** A sheet
+  with `columns` / `rows` AND `cells` used to write only the `cells`: the
+  Normalizer returned early on `cells` and silently discarded `columns`,
+  `rows`, `totals` and `theme`, while `validate()` reported nothing. The cells
+  now overlay the table, as in PHP and Node: an explicit cell wins at its
+  address, and its format is merged onto the one beneath it (a cell that sets
+  only `bold` keeps the column's currency format and the row banding). The same
+  schema now writes the same parts as PHP and Node, pinned by the
+  `cellsOverTable` parity fixture and a Node cross-check. If you relied on the
+  old drop, remove the table from that sheet.
+
 - **Docs: an `.xlsm` is read; only an `.xltm` is refused.** The agent guide
   called an `.xlsm` a "macro-enabled template" that is "refused, never read".
   `read()` reads an `.xlsm` workbook's values and ignores its macros, as this

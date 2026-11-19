@@ -47,21 +47,16 @@ class Normalizer:
     def _normalize_sheet(self, sheet: dict[str, Any]) -> Sheet:
         name = str(sheet["name"])
 
-        if sheet.get("cells") is not None:
-            sparse = self._normalize_cell_map(sheet["cells"], name)
-            return Sheet(
-                name=name,
-                cells=sparse,
-                merged_regions=self._normalize_merges(sheet.get("mergedRegions") or []),
-                column_widths=self._normalize_widths(sheet),
-                frozen_rows=int(sheet.get("frozenRows") or 0),
-                frozen_cols=int(sheet.get("frozenCols") or 0),
-                row_heights=normalize_row_heights(sheet.get("rowHeights")),
-                print_setup=normalize_print(sheet.get("print")),
-                charts=normalize_charts(sheet.get("charts"), name, sparse),
-                data_validations=data_validations.for_sheet(sheet, name),
-            )
-
+        # NOTE: there is no separate "cells-only" path. A sheet with no columns
+        # and no rows builds an empty table below and then takes the overlay,
+        # which is the same code the combined case runs.
+        #
+        # It USED to return here the moment `cells` was set, and that early
+        # return silently discarded `columns`, `rows`, `totals` and `theme` --
+        # the same schema wrote every table cell in PHP and Node and only the
+        # explicit cells here, while `validate()` reported nothing because the
+        # Validator permits both together. PHP and Node had the identical bug
+        # in the identical place and fixed it first; this mirrors them.
         cells: dict[str, Cell] = {}
         columns = sheet.get("columns") or []
         rows = sheet.get("rows") or []
@@ -136,6 +131,23 @@ class Normalizer:
                     value=None,
                     formula=f"{excel_func}({range_start}:{range_end})",
                     format=combined,
+                )
+
+        # The overlay. Explicit cells win at their address, because naming an
+        # address is a more specific statement than "row 3 of the table".
+        #
+        # A format is MERGED rather than swapped, so a cell that only sets
+        # `bold` keeps the theme's banding and the column's currency format
+        # instead of dropping to bare. `merge_with` takes the overlay as the
+        # argument: the caller's value wins field by field. With no format
+        # beneath, the cell is taken as-is. Mirrors PHP and Node.
+        if sheet.get("cells") is not None:
+            for address, cell in self._normalize_cell_map(sheet["cells"], name).items():
+                beneath = cells.get(address)
+                cells[address] = (
+                    cell.with_format(beneath.format.merge_with(cell.format))
+                    if beneath is not None and beneath.format is not None
+                    else cell
                 )
 
         return Sheet(
