@@ -129,6 +129,11 @@ schema = holy_sheet.read(data, sheet="Contacts")
 rows = holy_sheet.rows(schema["sheets"][0])
 ```
 
+Only a cell with a formula in the file is a formula: a text cell whose string
+starts with `=` reads as that text. An error cell (`t="e"`) reads as its error
+string, e.g. `"#DIV/0!"`, and a formula's cached error comes back the same way in
+`computedValue`. A macro-enabled `.xlsm` workbook is read; its macros are ignored.
+
 A read is bounded by what the file expands into, not only its bytes:
 `maxRows` (default 1,048,576, per sheet), `maxColumns` (16,384, per sheet),
 `maxCells` (20,000,000, the workbook) and `maxSharedStrings` (20,000,000), in

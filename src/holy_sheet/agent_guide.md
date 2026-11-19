@@ -274,14 +274,17 @@ hint, and `IFERROR` is not in it (guard with `IF` instead).
   for making targeted edits with ops.
 - Dates come back as ISO strings, including a date formula's `computedValue`; files in
   the 1904 date system read correctly. Formulas are read, never evaluated.
+- Only a cell with a formula in the file is a formula. A text cell whose string starts
+  with `=` reads as that text. An error cell reads as its error string, e.g. `"#DIV/0!"`,
+  as does a formula's cached error in `computedValue`.
 - **Limits.** Every limit a read enforces is an option: `maxArchiveBytes`,
   `maxEntries`, `maxPartBytes`, `maxExpandedBytes`, `maxCompressionRatio`, `maxRows`,
   `maxColumns`, `maxCells`, `maxSharedStrings`. A refusal (`ReadLimitExceeded`, or
   `ArchiveRefused` with reason `archive_limit`) names the limit, its maximum and what
   the file needs, e.g. `maxPartBytes is 67,108,864; this file needs at least 275,497,997`.
   Report that to the person; do not raise a limit on your own, it is the host's setting.
-  A file with a `DOCTYPE` in any part, or a macro-enabled `.xltm` / `.xlsm` template, is
-  refused, never read.
+  A file with a `DOCTYPE` in any part, or a macro-enabled `.xltm` template, is
+  refused, never read. A macro-enabled `.xlsm` workbook is read; its macros are ignored.
 - `Agent::convertTemplate($bytesOrPath, $to)` turns an `.xltx` / `.ots` template into
   its `.xlsx` / `.ods` twin or back (`$to` is `document`, `template`, or null to flip),
   copying every other part byte for byte.

@@ -12,6 +12,17 @@ what moved.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Docs: an `.xlsm` is read; only an `.xltm` is refused.** The agent guide
+  called an `.xlsm` a "macro-enabled template" that is "refused, never read".
+  `read()` reads an `.xlsm` workbook's values and ignores its macros, as this
+  changelog already said. The guide, README and `AGENTS.md` now also say that a
+  text cell starting with `=` reads as text (only a cell with a formula is a
+  formula) and that an error cell reads as its error string, e.g. `"#DIV/0!"`.
+  New tests pin all three on workbooks built from raw XML. No code changed;
+  nothing to do.
+
 ### Changed
 
 - **CI: the lab-certificate gate verifies against the lab's rotated key list.**

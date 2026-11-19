@@ -49,7 +49,11 @@ Module-level functions, no class to instantiate:
 - **`read` takes bytes and `describe` takes a path.** Do not pass a path to
   `read`.
 - **Lint before writing.** A valid schema can still compute wrong.
-- **A bare string cell beginning with `=` is a formula**, as in PHP.
+- **A bare string cell beginning with `=` is a formula when you WRITE**, as in
+  PHP. Write `{"value": "=text"}` to keep it a string.
+- **In a READ file, only a cell with a formula is a formula.** A text cell
+  whose string starts with `=` reads as that text; an error cell reads as its
+  error string, e.g. `"#DIV/0!"`.
 - Raise read ceilings through `limits` only on purpose.
 
 ## When you build with this kit
