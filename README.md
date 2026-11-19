@@ -85,9 +85,9 @@ Module-level functions — no class to instantiate, no DI container:
 |---|---|
 | `validate(schema)` | structured errors `[{path, expected, got, value, hint}]`; `[]` is valid |
 | `validate_and_repair(schema)` | `{schema, errors, repairs}` |
-| `to_bytes(schema)` | `bytes` |
-| `write(schema, path)` | `{path, bytes, sheets}` — synchronous |
-| `read(data, *, sheet=None, limits=None)` | schema, from xlsx or ods **bytes** |
+| `to_bytes(schema, *, formulas="promote")` | `bytes`; `formulas="explicit"` writes a bare `"=..."` string as text |
+| `write(schema, path, *, formulas="promote")` | `{path, bytes, sheets}` — synchronous |
+| `read(data, *, sheet=None, limits=None)` | schema, from xlsx or ods **bytes**, with `activeSheet: {index, name}` |
 | `describe(path, *, sheet=None, limits=None)` | schema, from an xlsx or ods **path** |
 | `rows(sheet, *, formulas="computed", max_cells=None)` | a read sheet as rows of values |
 | `to_csv(table, options=None)` | `{text, report}`: one portable table as RFC 4180 CSV |
@@ -127,6 +127,21 @@ schema = holy_sheet.read(data, sheet="Contacts")
 # gives its cached computedValue; formulas="formula" gives "=SUM(B2:B9)". A
 # merged region's value is at its top-left cell only.
 rows = holy_sheet.rows(schema["sheets"][0])
+
+# The sheet the file opens on. Use it rather than assuming the first sheet.
+holy_sheet.read(data)["activeSheet"]    # {"index": 1, "name": "Summary"}
+# Writing "activeSheet": "Summary" makes that sheet open first.
+```
+
+### Untrusted text: `formulas="explicit"`
+
+By default a bare string starting with `=` is written as a formula. When the
+cell text is not yours (customer data in an export), that is formula
+injection. `formulas="explicit"` writes such a string as text; only a
+`{"formula": ...}` cell is a formula:
+
+```python
+holy_sheet.to_bytes(schema, formulas="explicit")
 ```
 
 Only a cell with a formula in the file is a formula: a text cell whose string

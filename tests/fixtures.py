@@ -259,6 +259,18 @@ SCHEMAS: dict[str, Any] = {
         "meta": META,
         "sheets": [{"name": "Wide", "cells": _wide_cells()}],
     },
+    # CC-fancy-0050: a schema naming an active sheet writes <workbookView
+    # activeTab>, and reads back as {"index", "name"}. Mirrored in
+    # holy-sheet-js's parity suite.
+    "activeSheet": {
+        "meta": META,
+        "activeSheet": "Second",
+        "sheets": [
+            {"name": "First", "cells": {"A1": "first"}},
+            {"name": "Second", "cells": {"A1": "second"}},
+            {"name": "Third", "cells": {"A1": "third"}},
+        ],
+    },
     # Print setup + row heights: a height on a row with no cells, a fractional
     # height, and a literal "&" in the footer. Same document as the Node port's.
     "printSetup": {

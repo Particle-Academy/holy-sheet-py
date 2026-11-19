@@ -241,6 +241,12 @@ fixing one cell can surface an error in a cell that reads it.
 Write `formula` without the leading `=` (`'A2*2'`); a leading `=` is accepted and
 stripped, and `lint`, `reduce` and `write` all read the two forms as the same formula.
 
+Always put a formula in `formula`. A bare string cell starting with `=` (`"=SUM(B2:B9)"`)
+is a formula only under the default write mode. A host writing text it did not author
+(customer data in an export) passes `formulas: 'explicit'` to `write` / `toBytes`, and
+then a bare `"=..."` string is written as that text: it cannot become a formula. The
+`{formula}` form is a formula in both modes.
+
 Lint follows Excel: `IF` evaluates only the branch it takes, so `IF(B1=0,0,A1/B1)`
 lints clean; `%` is postfix (`50%` is 0.5); `^` binds tighter than `*`. A `#NAME?`
 hint starts `Syntax error:` or `Unknown function X`; the vocabulary is the one in the
@@ -265,6 +271,11 @@ hint, and `IFERROR` is not in it (guard with `IF` instead).
   Options: `sheet` reads ONE sheet by its exact name, and the others are never parsed
   (an unknown name throws `SheetNotFoundException`, whose message lists every sheet);
   `limits` raises or lowers the read limits (below).
+- The result names the sheet the file opens on: `activeSheet: {index, name}`, the
+  index into `sheets` (Python `read(x)["activeSheet"]`). Read that sheet when the
+  person means "the spreadsheet"; never assume it is the first. It is left out when
+  `sheet` narrowed the read. Writing `activeSheet: "Summary"` (or the object read
+  returned) makes that sheet open first.
 - `Agent::rows($sheet, $options)` turns one read sheet into rows of values, row 1 and
   column A at index 0, a blank row as `[]`. Formulas give their cached value unless
   `formulas` is `'formula'`. Use it instead of walking `cells`.

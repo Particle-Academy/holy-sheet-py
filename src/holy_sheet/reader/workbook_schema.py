@@ -25,6 +25,11 @@ class WorkbookSchema:
         schema: dict[str, Any] = {
             "sheets": [_sheet_to_schema(sheet, workbook.date1904) for sheet in workbook.sheets]
         }
+        # The sheet that opens, as an index into `sheets` and its name, so a
+        # caller never has to assume it is the first. Write takes the name back.
+        active = workbook.active_sheet
+        if active is not None and 0 <= active < len(workbook.sheets):
+            schema["activeSheet"] = {"index": active, "name": workbook.sheets[active].name}
         if workbook.meta:
             schema["meta"] = workbook.meta
         # Only templates say so; a document read is unchanged.

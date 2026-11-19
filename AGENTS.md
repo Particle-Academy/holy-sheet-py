@@ -38,7 +38,13 @@ Module-level functions, no class to instantiate:
   `validate(schema)` (or `validate_and_repair`), `lint(schema)`, then
   `write(schema, path)` or `to_bytes(schema)`.
 - Read: `read(data, sheet=..., limits=...)` from xlsx or ods **bytes**,
-  `describe(path, ...)` from a **path**, `rows(sheet, ...)`.
+  `describe(path, ...)` from a **path**, `rows(sheet, ...)`. The result names
+  the sheet the file opens on: `read(data)["activeSheet"]` is
+  `{"index": 1, "name": "Summary"}` (left out when `sheet=` narrowed the read).
+  Write `"activeSheet": "Summary"` to choose it.
+- Write options: `to_bytes(schema, formulas="explicit")` (and `write`). The
+  default, `"promote"`, writes a bare string starting with `=` as a formula;
+  `"explicit"` writes it as text, so only a `{"formula": ...}` cell is one.
 - Build from data: `from_array`, `from_csv`; `to_csv` for one portable table.
 - Versions: `diff`, `reduce`, `op_schema`, `equivalent`.
 - Templates: `convert_template`, or the CLI
@@ -51,6 +57,12 @@ Module-level functions, no class to instantiate:
 - **Lint before writing.** A valid schema can still compute wrong.
 - **A bare string cell beginning with `=` is a formula when you WRITE**, as in
   PHP. Write `{"value": "=text"}` to keep it a string.
+- **Writing text you did not author? Pass `formulas="explicit"`.** By default
+  customer data like `=HYPERLINK(...)` in an export becomes a formula, which is
+  formula injection. Explicit mode writes it as text; put real formulas in
+  `formula`.
+- **Do not assume the first sheet is the one people use.** Read
+  `activeSheet` instead.
 - **In a READ file, only a cell with a formula is a formula.** A text cell
   whose string starts with `=` reads as that text; an error cell reads as its
   error string, e.g. `"#DIV/0!"`.

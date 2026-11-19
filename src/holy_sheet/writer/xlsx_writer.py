@@ -194,10 +194,18 @@ class XlsxWriter:
         for i, sheet in enumerate(workbook.sheets):
             name = xml_escape(sheet.name)
             sheets += f'<sheet name="{name}" sheetId="{i + 1}" r:id="rId{i + 1}"/>'
+        # The first sheet opens by default, so only an `activeSheet` naming
+        # another one needs saying; a schema naming the first writes the same
+        # bytes as one naming none. (PHP also handles a hidden first sheet
+        # here; this port has no sheet state.) CC-fancy-0050.
+        book_views = ""
+        if workbook.active_sheet:
+            book_views = f'<bookViews><workbookView activeTab="{workbook.active_sheet}"/></bookViews>'
         return (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
             ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            f"{book_views}"
             f"<sheets>{sheets}</sheets>"
             "</workbook>"
         )

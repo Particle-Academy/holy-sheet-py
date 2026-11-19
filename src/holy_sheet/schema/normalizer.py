@@ -37,12 +37,30 @@ from .theme import Theme
 _AGG_FUNCTIONS = ("SUM", "AVG", "COUNT", "MIN", "MAX")
 
 
+#: The `formulas` write option's two modes. CC-fancy-0050.
+FORMULAS = ("promote", "explicit")
+
+
 class Normalizer:
+    def __init__(self, formulas: str = "promote") -> None:
+        """``formulas``: ``"promote"`` (the default) writes a bare string
+        beginning with "=" as a formula; ``"explicit"`` writes it as text, so
+        only a ``{"formula": ...}`` cell writes one. Use ``"explicit"`` for text
+        the caller did not author: it closes formula injection."""
+        # `is True` / non-str values fail the membership test on purpose: True == 1, never a mode.
+        if not isinstance(formulas, str) or formulas not in FORMULAS:
+            raise ValueError('[holy-sheet] write option formulas must be "promote" or "explicit"')
+        self._formulas = formulas
+
     def normalize(self, schema: Any) -> Workbook:
         sheets = [
             self._normalize_sheet(sheet) for _, sheet in entries(schema.get("sheets", []))
         ]
-        return Workbook(sheets=sheets, meta=schema.get("meta") or {})
+        return Workbook(
+            sheets=sheets,
+            meta=schema.get("meta") or {},
+            active_sheet=_active_sheet(schema, sheets),
+        )
 
     def _normalize_sheet(self, sheet: dict[str, Any]) -> Sheet:
         name = str(sheet["name"])
@@ -355,8 +373,10 @@ class Normalizer:
         explicit intent, so `{"value": "=literal"}` is the escape hatch for a
         genuine leading-"=" string and `{"formula": "..."}` says the caller
         already knows. A lone `"="` is too short to be a formula and stays text.
+
+        Under the ``explicit`` formulas mode nothing promotes: the string is text.
         """
-        if isinstance(value, str) and len(value) > 1 and value[0] == "=":
+        if self._formulas == "promote" and isinstance(value, str) and len(value) > 1 and value[0] == "=":
             return None, value[1:]
         return value, None
 
@@ -464,6 +484,20 @@ class Normalizer:
 
 
 _ROW_NUMBER = re.compile(r"^[1-9][0-9]{0,6}$")
+
+
+def _active_sheet(schema: Any, sheets: list[Sheet]) -> int | None:
+    """The index of the sheet ``activeSheet`` names (a name, or read()'s
+    ``{index, name}``, whose name decides); None when it names none. The
+    Validator has already refused a name that matches no sheet."""
+    active = schema.get("activeSheet") if isinstance(schema, dict) else None
+    name = active.get("name") if isinstance(active, dict) else active
+    if not isinstance(name, str):
+        return None
+    for i, sheet in enumerate(sheets):
+        if sheet.name == name:
+            return i
+    return None
 
 
 def column_code(column_def: Any) -> str | None:

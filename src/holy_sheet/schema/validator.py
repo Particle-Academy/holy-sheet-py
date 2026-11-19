@@ -80,6 +80,9 @@ class Validator:
         for key, sheet in entries(sheets):
             errors.extend(self._validate_sheet(sheet, f"sheets[{key}]", sheet_names))
 
+        if isinstance(schema, dict) and "activeSheet" in schema:
+            errors.extend(_validate_active_sheet(schema["activeSheet"], sheet_names))
+
         return errors
 
     def assert_valid(self, schema: Any) -> None:
@@ -469,6 +472,37 @@ def _validate_borders(fmt: dict[str, Any], path: str) -> list[dict[str, Any]]:
 
 
 _HEX_COLOUR = re.compile(r"#[0-9A-Fa-f]{6}", re.ASCII)
+
+
+_ACTIVE_SHEET_HINT = (
+    'Name the sheet shown when the file opens, e.g. "activeSheet": "Summary". '
+    'The {"index", "name"} object read() returns works too; its name decides.'
+)
+
+
+def _validate_active_sheet(active: Any, sheet_names: list[str]) -> list[dict[str, Any]]:
+    """`activeSheet` names the sheet shown when the file opens: a sheet name, or
+    the `{index, name}` object read() returns (its name decides). Mirrors PHP
+    `Validator::validateActiveSheet`, less its hidden-sheet check: this port has
+    no sheet state. CC-fancy-0050."""
+    path = "activeSheet"
+    name = active
+    # PHP decodes JSON `{}` to [], which it treats as the nameless object.
+    if isinstance(active, dict) or (isinstance(active, (list, tuple)) and len(active) == 0):
+        path = "activeSheet.name"
+        name = active.get("name") if isinstance(active, dict) else None
+    if not isinstance(name, str):
+        return [_error(path, "sheet name (string)", type_of(name), name, _ACTIVE_SHEET_HINT)]
+    if name not in sheet_names:
+        listed = ", ".join(f'"{n}"' for n in sheet_names)
+        return [_error(
+            "activeSheet",
+            'the name of a sheet in "sheets"',
+            "unknown sheet",
+            name,
+            f'No sheet is named "{name}". Names match exactly; this workbook has: {listed}.',
+        )]
+    return []
 
 
 def _error(path: str, expected: str, got: str, value: Any, hint: str) -> dict[str, Any]:

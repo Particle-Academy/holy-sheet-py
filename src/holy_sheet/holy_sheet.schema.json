@@ -12,10 +12,35 @@
     "sheets": {
       "type": "array",
       "minItems": 1,
-      "description": "One or more sheets. The first sheet is shown when the file opens.",
+      "description": "One or more sheets. The first sheet is shown when the file opens, unless activeSheet names another.",
       "items": {
         "$ref": "#/definitions/Sheet"
       }
+    },
+    "activeSheet": {
+      "description": "The sheet shown when the file opens, by its exact name. Defaults to the first sheet. read() returns it as {\"index\": 1, \"name\": \"Summary\"}, which is accepted here too; its name decides.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
     },
     "meta": {
       "type": "object",
@@ -383,7 +408,7 @@
         },
         "formula": {
           "type": "string",
-          "description": "Formula without leading '='. e.g. 'SUM(A1:A10)' or 'Sheet2!B5+1'."
+          "description": "Formula without leading '='. e.g. 'SUM(A1:A10)' or 'Sheet2!B5+1'. Always written as a formula. Prefer it to a bare \"=SUM(...)\" string: a host writing with formulas: \"explicit\" writes a bare string as text."
         },
         "computedValue": {
           "description": "Cached value from a previous evaluation. When present, Excel shows it without recomputing on open.",

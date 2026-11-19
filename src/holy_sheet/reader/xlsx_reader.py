@@ -15,6 +15,7 @@ parity with PHP.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..archive.office_template import source_kind
@@ -70,8 +71,14 @@ class XlsxReader:
                     raise SheetNotFoundException(only, names)
 
             sheets: list[Sheet] = []
+            # The position in workbook.xml of each described sheet: activeTab
+            # counts the <sheet> elements, and a sheet whose part is missing is
+            # skipped below, so the two orders can differ.
+            positions: list[int] = []
+            position = -1
             i = 0
             for sheet_el in find_all(find(root, "sheets"), "sheet"):
+                position += 1
                 name = attr(sheet_el, "name") or ""
                 rel_id = attr(sheet_el, "id") or ""
                 target = workbook_rels.get(rel_id, {}).get("Target")
@@ -133,11 +140,35 @@ class XlsxReader:
                         sheet.charts = charts
 
                 sheets.append(sheet)
+                positions.append(position)
                 i += 1
 
             meta = _parse_doc_props(_read(archive, "docProps/core.xml"))
 
-        return Workbook(sheets=sheets, meta=meta, source_kind=kind, date1904=date1904)
+        # A read narrowed to one sheet is not the workbook, so it names no active sheet.
+        active = _active_sheet(root, positions, position) if only is None and sheets else None
+
+        return Workbook(sheets=sheets, meta=meta, source_kind=kind, date1904=date1904, active_sheet=active)
+
+
+_UNSIGNED = re.compile(r"[0-9]+", re.ASCII)
+
+
+def _active_sheet(workbook: Any, positions: list[int], last_position: int) -> int:
+    """The described sheet that opens: the first `<workbookView>`'s
+    `activeTab`, clamped to the `<sheet>` elements workbook.xml lists. Absent,
+    or anything but a non-negative integer, is the default, 0. An active sheet
+    the reader skipped (its part is missing) falls back to the first described
+    sheet. Mirrors PHP `XlsxReader::activeSheet`. CC-fancy-0050."""
+    tab = 0
+    view = find(find(workbook, "bookViews"), "workbookView")
+    if view is not None:
+        # xsd:unsignedInt collapses whitespace; only the four XML spaces.
+        raw = (attr(view, "activeTab") or "").strip(" \t\n\r")
+        if _UNSIGNED.fullmatch(raw):
+            # Unbounded here; PHP saturates. Either way the clamp takes it to the last sheet.
+            tab = min(int(raw), max(0, last_position))
+    return positions.index(tab) if tab in positions else 0
 
 
 def _parse_doc_props(core_xml: bytes | None) -> dict[str, Any]:

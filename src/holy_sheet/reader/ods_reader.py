@@ -87,6 +87,7 @@ class OdsReader:
             content = _read(archive, "content.xml")
             styles = _read(archive, "styles.xml")
             meta = _read(archive, "meta.xml")
+            settings = _read(archive, "settings.xml") if only is None else None
 
         if content is None:
             raise RuntimeError("[holy-sheet] missing content.xml")
@@ -108,7 +109,19 @@ class OdsReader:
                 continue
             sheets.append(self._read_sheet(table, style_index))
 
-        return Workbook(sheets=sheets, meta=_read_meta(meta) if meta is not None else {}, source_kind=kind)
+        # A read narrowed to one table is not the workbook, so it names no active sheet.
+        active: int | None = None
+        if only is None and sheets:
+            name = _active_table(settings) if settings is not None else None
+            names = [s.name for s in sheets]
+            active = names.index(name) if name is not None and name in names else 0
+
+        return Workbook(
+            sheets=sheets,
+            meta=_read_meta(meta) if meta is not None else {},
+            source_kind=kind,
+            active_sheet=active,
+        )
 
     def _read_sheet(self, table: Element, styles: OdsStyles) -> Sheet:
         columns: list[tuple[int, int, str]] = []
@@ -417,6 +430,28 @@ def _read_meta(xml: bytes) -> dict[str, Any]:
         # ODF dates carry no zone unless one is written; the schema's are UTC.
         out["created"] = value if _ZONED.fullmatch(value) else value + "Z"
     return out
+
+
+def _active_table(xml: bytes) -> str | None:
+    """The table the document opens on, by name: the `ActiveTable` item of the
+    first entry of the `Views` map in settings.xml's `ooo:view-settings`, as
+    LibreOffice writes it. None when the part does not say. Mirrors PHP
+    `OdsReader::activeTable`. CC-fancy-0050."""
+    root = parse_xml_or_none(xml)
+    settings = ns.child(root, ns.OFFICE, "settings")
+    view = _config_named(settings, "config-item-set", "ooo:view-settings")
+    views = _config_named(view, "config-item-map-indexed", "Views")
+    entry = ns.child(views, ns.CONFIG, "config-item-map-entry")
+    item = _config_named(entry, "config-item", "ActiveTable")
+    return None if item is None else ns.own_text(item)
+
+
+def _config_named(parent: Element | None, element: str, name: str) -> Element | None:
+    """The first `config:<element>` child of `parent` whose `config:name` is `name`."""
+    for child in ns.children_in(parent, ns.CONFIG):
+        if ns.local(child) == element and ns.attr(child, ns.CONFIG, "name") == name:
+            return child
+    return None
 
 
 def _read(archive: SourceArchive, name: str) -> bytes | None:

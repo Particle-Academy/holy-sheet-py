@@ -35,7 +35,9 @@ split. Following PHP keeps the tally 2–1 in the direction already decided.
 
 Where PHP has a feature Node lacks, this implements PHP's. Two of those:
 
-- **`=`-promotion** — a bare string cell beginning with `=` is a formula.
+- **`=`-promotion** — a bare string cell beginning with `=` is a formula,
+  unless the caller writes with `formulas="explicit"` (CC-fancy-0050), which
+  `Normalizer(formulas=...)` carries to `_promote_formula`.
 - **Bare scalar `cells` entries** — `{"A1": 42}` as well as `{"A1": {"value": 42}}`.
 
 Node is a minor behind on both.
@@ -65,6 +67,17 @@ Three shape differences from a peer, each deliberate and each pinned by a test:
 - `write()` is **synchronous** (PHP's is; Node's is async only for browsers).
 - `from_csv()` accepts a **path or content** (PHP's superset; Node takes content).
 - `read()` takes **bytes**, `describe()` takes a **path** (Node's split).
+
+Write options are keyword-only (`to_bytes(schema, *, formulas=...)`), where PHP
+takes an options array: an unknown option is Python's own `TypeError`, and a bad
+`formulas` value is a `ValueError` with PHP's message.
+
+**`activeSheet` is decided by position, mapped twice.** The xlsx reader records
+each described sheet's position among workbook.xml's `<sheet>` elements and maps
+`activeTab` through it, because a sheet whose part is missing is skipped. Writing
+it back is by name only. Unlike PHP the writer has no hidden-sheet branch: this
+port has no sheet `state`. The shared cases are
+`holy-sheet/tests/fixtures/active-sheet/cases.json`.
 
 ## Byte parity with PHP is the definition of done
 

@@ -91,27 +91,36 @@ def validate_and_repair(schema: Any) -> dict[str, Any]:
     return Validator().validate_and_repair(schema)
 
 
-def to_bytes(schema: Any) -> bytes:
+def to_bytes(schema: Any, *, formulas: str = "promote") -> bytes:
     """The xlsx bytes, without touching disk.
 
     The universal entry point -- an HTTP response body, a blob, an attachment.
     Raises `SchemaException` when the schema is invalid; call `validate()` first
     to dry-run instead.
+
+    ``formulas`` is ``"promote"`` (the default: a bare string beginning with
+    "=" is a formula) or ``"explicit"`` (it is text; only a ``{"formula": ...}``
+    cell writes one). Use ``"explicit"`` when cell text comes from anyone but
+    the caller, such as customer data in an export. Anything else raises
+    ``ValueError`` before the schema is checked. Mirrors PHP
+    ``Agent::toBytes($schema, ['formulas' => ...])``.
     """
+    normalizer = Normalizer(formulas)
     Validator().assert_valid(schema)
-    workbook = Normalizer().normalize(schema)
+    workbook = normalizer.normalize(schema)
     return XlsxWriter().to_bytes(workbook)
 
 
-def write(schema: Any, path: str) -> dict[str, Any]:
+def write(schema: Any, path: str, *, formulas: str = "promote") -> dict[str, Any]:
     """Write a workbook to disk. Synchronous.
 
     Deliberately NOT async. PHP's is synchronous; Node's is async only because
     browsers have no synchronous filesystem, which is not a constraint Python
-    shares. Returns `{path, bytes, sheets}`.
+    shares. Returns `{path, bytes, sheets}`. ``formulas`` is `to_bytes()`'s.
     """
+    normalizer = Normalizer(formulas)
     Validator().assert_valid(schema)
-    workbook = Normalizer().normalize(schema)
+    workbook = normalizer.normalize(schema)
     XlsxWriter().write(workbook, path)
     return {
         "path": path,

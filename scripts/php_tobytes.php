@@ -8,7 +8,7 @@ declare(strict_types=1);
  * minimal PSR-4 autoloader (the PHP core is zero-dependency) - no composer
  * needed.
  *
- *   php php_tobytes.php <input.json> <out.xlsx>
+ *   php php_tobytes.php <input.json> <out.xlsx> [options.json]
  *
  * `HOLY_SHEET_PHP_SRC` is checked before the sibling checkout. A hard-coded sibling path
  * alone would resolve only inside the .agi envelope, so CI - or anyone with a
@@ -45,4 +45,8 @@ if (! class_exists(\HolySheet\Agent::class)) {
     exit(3);
 }
 
-file_put_contents($argv[2], \HolySheet\Agent::toBytes($input));
+// The optional third argument holds Agent::toBytes()'s write options, e.g.
+// {"formulas": "explicit"}.
+$options = $argc > 3 ? json_decode((string) file_get_contents($argv[3]), true, 512, JSON_THROW_ON_ERROR) : [];
+
+file_put_contents($argv[2], \HolySheet\Agent::toBytes($input, $options));

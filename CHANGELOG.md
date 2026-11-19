@@ -12,6 +12,35 @@ what moved.
 
 ## [Unreleased]
 
+### Added
+
+- **`read()` names the sheet the workbook opens on** (CC-fancy-0050):
+  `read(data)["activeSheet"]` is `{"index": 1, "name": "Summary"}`, right after
+  `sheets`, from the first `<workbookView activeTab>` (absent or not a
+  non-negative integer: 0; past the last sheet: the last), or an `.ods` view's
+  `ActiveTable`. The index counts the described sheets, so a sheet the reader
+  skipped does not shift it. Left out when `sheet=` narrows the read, which is
+  not the whole workbook. `describe()` returns it too. Mirrors PHP holy-sheet.
+  Additive; a caller that ignores the key sees nothing change.
+- **The writer takes `activeSheet`**, a sheet name or the object `read()`
+  returns (its `name` decides), and writes `<workbookView activeTab>`. Naming
+  the first sheet, or nothing, writes no `bookViews`, so existing output is
+  byte-identical. The validator refuses an unknown name or a non-string with
+  the usual structured error, the same one PHP and Node return.
+- **Write option `formulas="promote" | "explicit"`** on `to_bytes()` and
+  `write()` (CC-fancy-0050). `"promote"`, the default, is today's behaviour,
+  byte-identical: a bare string starting with `=` is a formula. Under
+  `"explicit"` that string is written as text, and only a `{"formula": ...}`
+  cell writes `<f>`. Additive; the default is unchanged. **Use
+  `formulas="explicit"` for untrusted data** (customer text in an export), where
+  promotion is formula injection. Any other value raises `ValueError` before the
+  schema is checked.
+- Tests: `tests/test_active_sheet.py`, driven by the PHP repo's shared
+  `tests/fixtures/active-sheet/cases.json`, with part-for-part parity against
+  the PHP writer for every case (`scripts/php_tobytes.php` takes an optional
+  options file), and an `activeSheet` fixture in the shared parity table. The
+  tool schema and the agent guide describe both; their hash pins moved.
+
 ## [0.13.3] - 2026-11-19
 
 ### Fixed

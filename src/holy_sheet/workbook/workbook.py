@@ -25,3 +25,8 @@ class Workbook:
     #: (`<workbookPr date1904="1"/>`). Read only: the writer always writes the
     #: 1900 system, and describe() turns every date into an ISO string.
     date1904: bool = False
+    #: The sheet shown when the file opens, as an index into `sheets`; None
+    #: when nothing names one. A reader sets it from the file (`<workbookView
+    #: activeTab>`, or an ODS view's `ActiveTable`), the Normalizer from the
+    #: schema's `activeSheet`. CC-fancy-0050.
+    active_sheet: int | None = None
