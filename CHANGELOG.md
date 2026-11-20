@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-19
+
 ### Added
 
 - **`read()` names the sheet the workbook opens on** (CC-fancy-0050):
