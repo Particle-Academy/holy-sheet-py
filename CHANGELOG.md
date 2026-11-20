@@ -12,6 +12,8 @@ what moved.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-20
+
 ### Fixed
 
 - **Workbooks with absolute relationship targets (openpyxl, LibreOffice and
