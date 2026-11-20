@@ -86,6 +86,15 @@ def test_reads_the_active_sheet_of_each_shared_fixture(case: dict[str, Any]) -> 
     assert schema.get("activeSheet") == case["activeSheet"]
 
 
+@pytest.mark.parametrize("case", CASES["readRaises"], ids=_ids(CASES["readRaises"]))
+def test_raises_for_a_missing_sheet_part_rather_than_picking_around_it(case: dict[str, Any]) -> None:
+    from holy_sheet import MissingPartException
+
+    with pytest.raises(MissingPartException) as caught:
+        read(_fixture(case["file"]), **case["options"])
+    assert caught.value.part == case["part"]
+
+
 def test_describes_the_active_sheet_from_a_path_too() -> None:
     assert describe(str(DIR / "active-1.xlsx"))["activeSheet"] == {"index": 1, "name": "Second"}
 

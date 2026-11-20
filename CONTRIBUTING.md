@@ -74,7 +74,8 @@ takes an options array: an unknown option is Python's own `TypeError`, and a bad
 
 **`activeSheet` is decided by position, mapped twice.** The xlsx reader records
 each described sheet's position among workbook.xml's `<sheet>` elements and maps
-`activeTab` through it, because a sheet whose part is missing is skipped. Writing
+`activeTab` through it. (A sheet whose part is missing used to be skipped; it now
+raises `MissingPartException`, so the mapping is the identity on a full read.) Writing
 it back is by name only. Unlike PHP the writer has no hidden-sheet branch: this
 port has no sheet `state`. The shared cases are
 `holy-sheet/tests/fixtures/active-sheet/cases.json`.
@@ -216,6 +217,18 @@ EMPTY sheet. Malformed XML and an unreadable encoding (`XmlRefused` that is not
 handling of a part it cannot parse. `[Content_Types].xml` is checked first, and
 any refusal there, encoding included, refuses the package
 (`refused_declaration()`). A test fails if `src/` parses XML anywhere else.
+
+**Relationship targets resolve per OPC, in one place.** `RelsParser.resolve(source,
+target)`: relative to the directory of the part that OWNS the relationship, or
+package-absolute when the target starts with `/` (openpyxl and LibreOffice write
+those; Excel writes relative). Never build a part path by prefixing `"xl/"` or by
+counting sheets: `"xl/" + target` turned openpyxl's `/xl/worksheets/sheet1.xml`
+into a path that does not exist and read ZERO sheets, silently, and
+`sheet{i+1}.xml.rels` handed a sheet another sheet's comments after a tab
+reorder. A sheet's rels part is `RelsParser.rels_path_of(its part)`. External
+relationships are never parts. A relationship whose part is missing raises
+`MissingPartException`; never `continue` past one. Shared cases:
+`holy-sheet/tests/fixtures/rels-targets/cases.json`.
 
 **Dates follow the workbook's date system.** `<workbookPr date1904="1"/>` (or
 `"true"`) moves the epoch to 1904-01-01; `Workbook.date1904` carries it to

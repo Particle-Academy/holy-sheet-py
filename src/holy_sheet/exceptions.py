@@ -119,6 +119,33 @@ class ReadLimitExceeded(ArchiveRefused):
         return str(self.args[0])
 
 
+class MissingPartException(RuntimeError):
+    """A relationship in the package points at a part the package does not
+    contain, or a `<sheet>` names a relationship that does not exist.
+
+    The reader used to skip such a part silently, so a workbook whose every
+    sheet was unreachable (openpyxl's package-absolute targets, before they
+    resolved) read as a workbook with no sheets and no error. `part` is the
+    resolved part name (None when the relationship itself is missing),
+    `source` the part that owns the relationship, `rel_id` its id. A
+    `RuntimeError`, as a missing xl/workbook.xml always was. Mirrors PHP and
+    Node `MissingPartException`, message included.
+    """
+
+    def __init__(self, part: str | None, source: str, rel_id: str) -> None:
+        self.part = part
+        self.source = source
+        self.rel_id = rel_id
+        if part is None:
+            message = f"[holy-sheet] {source} names relationship {rel_id}, which its rels part does not have"
+        else:
+            message = (
+                f"[holy-sheet] missing part {part}: {source} relationship {rel_id} points to it, "
+                "but the package does not contain it"
+            )
+        super().__init__(message)
+
+
 class SheetNotFoundException(ValueError):
     """`read(data, sheet=...)` named a sheet the workbook does not have.
 

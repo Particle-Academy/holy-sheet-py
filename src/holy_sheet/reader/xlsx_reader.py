@@ -24,7 +24,7 @@ from ..workbook.cell_comment import CellComment
 from ..workbook.sheet import Sheet
 from ..workbook.workbook import Workbook
 from . import chart_parser
-from ..exceptions import SheetNotFoundException
+from ..exceptions import MissingPartException, SheetNotFoundException
 from .comments_parser import CommentsParser
 from .read_limits import ReadLimits
 from .rels_parser import RelsParser
@@ -50,14 +50,23 @@ class XlsxReader:
         kind = source_kind(archive)
 
         with archive:
-            styles_index = StylesParser.parse(_read(archive, "xl/styles.xml"))
-            shared_strings = SharedStringsParser.parse(_read(archive, "xl/sharedStrings.xml"), limits)
-
-            workbook_xml = _read(archive, "xl/workbook.xml")
+            workbook_path = "xl/workbook.xml"
+            workbook_xml = _read(archive, workbook_path)
             if workbook_xml is None:
                 raise RuntimeError("[holy-sheet] missing xl/workbook.xml")
 
-            workbook_rels = RelsParser.parse(_read(archive, "xl/_rels/workbook.xml.rels"))
+            workbook_rels = RelsParser.parse(_read(archive, RelsParser.rels_path_of(workbook_path)))
+
+            # Styles and shared strings are wherever the workbook's
+            # relationships say; the conventional names are only the fallback
+            # for a package that declares neither.
+            styles_index = StylesParser.parse(
+                _workbook_part(archive, workbook_rels, workbook_path, "styles", "xl/styles.xml")
+            )
+            shared_strings = SharedStringsParser.parse(
+                _workbook_part(archive, workbook_rels, workbook_path, "sharedStrings", "xl/sharedStrings.xml"),
+                limits,
+            )
 
             root = parse_xml_or_none(workbook_xml)
             if root is None:
@@ -72,76 +81,62 @@ class XlsxReader:
 
             sheets: list[Sheet] = []
             # The position in workbook.xml of each described sheet: activeTab
-            # counts the <sheet> elements, and a sheet whose part is missing is
-            # skipped below, so the two orders can differ.
+            # counts the <sheet> elements. Every listed sheet is described (a
+            # missing part raises), but the mapping is kept explicit.
             positions: list[int] = []
             position = -1
-            i = 0
             for sheet_el in find_all(find(root, "sheets"), "sheet"):
                 position += 1
                 name = attr(sheet_el, "name") or ""
-                rel_id = attr(sheet_el, "id") or ""
-                target = workbook_rels.get(rel_id, {}).get("Target")
-                if target is None:
-                    continue
-
-                sheet_path = "xl/" + target.lstrip("/")
                 if only is not None and name != only:
-                    # The sheet rels part is named by the position among READ
-                    # sheets, so a skipped sheet advances it exactly when a full
-                    # read would have.
-                    if sheet_path in archive.names():
-                        i += 1
                     continue
-                worksheet_xml = _read(archive, sheet_path)
-                if worksheet_xml is None:
-                    continue
+                rel_id = attr(sheet_el, "id") or ""
+                sheet_rel = workbook_rels.get(rel_id)
+                if sheet_rel is None or RelsParser.is_external(sheet_rel):
+                    raise MissingPartException(None, workbook_path, rel_id)
+
+                sheet_path = RelsParser.resolve(workbook_path, sheet_rel["Target"])
+                worksheet_xml = _require(archive, sheet_path, workbook_path, rel_id)
+
+                # The sheet's own rels part sits beside it, named after its
+                # actual part -- not after its position in the tab strip, which
+                # need not match (sheet3.xml can be the first tab).
+                sheet_rels = RelsParser.parse(_read(archive, RelsParser.rels_path_of(sheet_path)))
 
                 comments: dict[str, CellComment] = {}
-                sheet_rels_xml = _read(archive, f"xl/worksheets/_rels/sheet{i + 1}.xml.rels")
-                if sheet_rels_xml is not None:
-                    sheet_rels = RelsParser.parse(sheet_rels_xml)
-                    for rel in RelsParser.by_type(sheet_rels, "/comments").values():
-                        comments_path = _resolve_relative_path(sheet_path, rel["Target"])
-                        comments_xml = _read(archive, comments_path)
-                        if comments_xml is not None:
-                            comments.update(CommentsParser.parse(comments_xml))
+                for c_id, rel in RelsParser.by_type(sheet_rels, "/comments").items():
+                    comments_xml = _require(archive, RelsParser.resolve(sheet_path, rel["Target"]), sheet_path, c_id)
+                    comments.update(CommentsParser.parse(comments_xml))
 
                 sheet = WorksheetParser.parse(
                     worksheet_xml, name, styles_index, comments, shared_strings, limits
                 )
 
                 # Charts: sheet rels -> drawing -> drawing rels -> chart parts (see PHP).
-                if sheet_rels_xml is not None:
-                    charts: list[dict[str, Any]] = []
-                    for rel in RelsParser.by_type(RelsParser.parse(sheet_rels_xml), "/drawing").values():
-                        drawing_path = _resolve_relative_path(sheet_path, rel["Target"])
-                        directory, _, base = drawing_path.rpartition("/")
-                        drawing_xml = _read(archive, drawing_path)
-                        drawing_rels_xml = _read(archive, f"{directory}/_rels/{base}.rels")
-                        if drawing_xml is None or drawing_rels_xml is None:
+                charts: list[dict[str, Any]] = []
+                for d_id, rel in RelsParser.by_type(sheet_rels, "/drawing").items():
+                    drawing_path = RelsParser.resolve(sheet_path, rel["Target"])
+                    drawing_xml = _require(archive, drawing_path, sheet_path, d_id)
+                    # A drawing with no rels part holds no chart; that is not a missing part.
+                    drawing_rels_xml = _read(archive, RelsParser.rels_path_of(drawing_path))
+                    if drawing_rels_xml is None:
+                        continue
+                    drawing_rels = RelsParser.parse(drawing_rels_xml)
+                    for anchor in chart_parser.anchors(drawing_xml):
+                        chart_rel = drawing_rels.get(anchor["rel"])
+                        if chart_rel is None or RelsParser.is_external(chart_rel):
                             continue
-                        drawing_rels = RelsParser.parse(drawing_rels_xml)
-                        for anchor in chart_parser.anchors(drawing_xml):
-                            chart_target = drawing_rels.get(anchor["rel"], {}).get("Target")
-                            chart_xml = (
-                                _read(archive, _resolve_relative_path(drawing_path, chart_target))
-                                if isinstance(chart_target, str)
-                                else None
-                            )
-                            parsed = (
-                                chart_parser.chart(chart_xml, name, anchor["from"], anchor["to"])
-                                if chart_xml is not None
-                                else None
-                            )
-                            if parsed is not None:
-                                charts.append(parsed)
-                    if charts:
-                        sheet.charts = charts
+                        chart_xml = _require(
+                            archive, RelsParser.resolve(drawing_path, chart_rel["Target"]), drawing_path, anchor["rel"]
+                        )
+                        parsed = chart_parser.chart(chart_xml, name, anchor["from"], anchor["to"])
+                        if parsed is not None:
+                            charts.append(parsed)
+                if charts:
+                    sheet.charts = charts
 
                 sheets.append(sheet)
                 positions.append(position)
-                i += 1
 
             meta = _parse_doc_props(_read(archive, "docProps/core.xml"))
 
@@ -157,9 +152,9 @@ _UNSIGNED = re.compile(r"[0-9]+", re.ASCII)
 def _active_sheet(workbook: Any, positions: list[int], last_position: int) -> int:
     """The described sheet that opens: the first `<workbookView>`'s
     `activeTab`, clamped to the `<sheet>` elements workbook.xml lists. Absent,
-    or anything but a non-negative integer, is the default, 0. An active sheet
-    the reader skipped (its part is missing) falls back to the first described
-    sheet. Mirrors PHP `XlsxReader::activeSheet`. CC-fancy-0050."""
+    or anything but a non-negative integer, is the default, 0. A tab no
+    described sheet sits at falls back to the first described sheet. Mirrors
+    PHP `XlsxReader::activeSheet`. CC-fancy-0050."""
     tab = 0
     view = find(find(workbook, "bookViews"), "workbookView")
     if view is not None:
@@ -189,14 +184,27 @@ def _read(archive: SourceArchive, name: str) -> bytes | None:
     return archive.read(name)
 
 
-def _resolve_relative_path(base: str, target: str) -> str:
-    """Resolve `../comments1.xml` against `xl/worksheets/sheet1.xml`."""
-    base_dir = base.rsplit("/", 1)[0] if "/" in base else ""
-    parts: list[str] = []
-    for segment in f"{base_dir}/{target}".split("/"):
-        if segment == "..":
-            if parts:
-                parts.pop()
-        elif segment not in ("", "."):
-            parts.append(segment)
-    return "/".join(parts)
+def _require(archive: SourceArchive, part: str, source: str, rel_id: str) -> bytes:
+    """A part a relationship points at. Missing, it raises: a part skipped
+    silently is how a workbook read as having no sheets and no error."""
+    data = archive.read(part)
+    if data is None:
+        raise MissingPartException(part, source, rel_id)
+    return data
+
+
+def _workbook_part(
+    archive: SourceArchive,
+    workbook_rels: dict[str, dict[str, str]],
+    workbook_path: str,
+    rel_type: str,
+    fallback: str,
+) -> bytes | None:
+    """The workbook-level part of relationship type `rel_type` (its last URI
+    segment, so the transitional and strict namespaces both match), or the
+    conventional `fallback` when the workbook declares no such relationship. A
+    declared part that is missing raises. Mirrors PHP `XlsxReader::workbookPart`."""
+    for rel_id, rel in workbook_rels.items():
+        if not RelsParser.is_external(rel) and rel["Type"].endswith("/" + rel_type):
+            return _require(archive, RelsParser.resolve(workbook_path, rel["Target"]), workbook_path, rel_id)
+    return archive.read(fallback)

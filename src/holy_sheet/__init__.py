@@ -49,6 +49,7 @@ from .agent import (
 )
 from .exceptions import (
     ArchiveRefused,
+    MissingPartException,
     OfficeTemplateRefused,
     ReadLimitExceeded,
     SchemaException,
@@ -102,6 +103,7 @@ __all__ = [
     "write",
     # Errors.
     "ArchiveRefused",
+    "MissingPartException",
     "OfficeTemplateRefused",
     "OptionsInvalid",
     "ReadLimitExceeded",
